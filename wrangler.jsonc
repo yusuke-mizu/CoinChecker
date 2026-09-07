@@ -1,3 +1,5 @@
+// Cloudflare WORKER config for OpenNext — not Pages.
+// Do not add pages_build_output_dir. A Pages Git project looking for "dist" will fail.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "coin-checker",

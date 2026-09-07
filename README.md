@@ -74,12 +74,16 @@ gh repo create CoinChecker --private --source=. --remote=origin --push
 
 ## Cloudflare（どこからでも見る準備）
 
-Cloudflare の現行デフォルトは vinext（beta）です。このアプリは既存の Next.js App Router を維持するため、公式に残っている **OpenNext adapter**（`@opennextjs/cloudflare`）で Workers に載せます。
+このアプリは静的サイトではありません。`/api/*` の Route Handler があるため、**Cloudflare Pages（output: `dist`）では動きません。** OpenNext で **Workers** にデプロイします。
+
+`npm run build`（`next build`）が成功しても、Pages が `dist` を探すと次で落ちます。
+
+```
+Error: Output directory "dist" not found.
+Failed: build output directory not found
+```
 
 ### 1. 初回デプロイ（手元）
-
-1. [Cloudflare](https://dash.cloudflare.com/sign-up) にアカウントを作る
-2. ログインする
 
 ```bash
 npx wrangler login
@@ -90,21 +94,29 @@ npm run deploy
 
 ### 2. GitHub からの自動デプロイ
 
-どちらか一方で足ります。
+**Pages プロジェクトは使わないでください。** 失敗ログに `pages_build_output_dir` や `Output directory "dist"` が出ていたら、それは Pages です。そのプロジェクトは削除するか切断し、Worker を作り直します。
 
-**A. Cloudflare Dashboard**
+**A. Cloudflare Dashboard（Workers Builds）**
 
-1. Workers & Pages → Create → Connect GitHub でこのリポジトリを選ぶ
-2. ダッシュボードの Workers Builds 手順に従ってビルド／デプロイする
+1. Workers & Pages → **Create** → **Workers**（Pages ではない）
+2. Connect GitHub でこのリポジトリを選ぶ
+3. ビルド設定:
+
+| 項目 | 値 |
+| --- | --- |
+| Build command | `npm run build:cloudflare` |
+| Deploy command | `npx wrangler deploy` |
+| Root directory | `/`（リポジトリ直下） |
+| Output directory | 空のまま（`dist` にしない） |
 
 **B. GitHub Actions**（`.github/workflows/deploy.yml`）
 
-リポジトリ Secrets に次を追加する:
+リポジトリ Secrets:
 
 - `CLOUDFLARE_API_TOKEN` … Workers の Edit 権限がある API トークン
 - `CLOUDFLARE_ACCOUNT_ID` … ダッシュボード右サイドバーの Account ID
 
-その後 `main` への push でデプロイされます。
+`main` への push で `npm run deploy` が走ります。
 
 ### 補足
 
