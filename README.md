@@ -87,7 +87,7 @@ npx wrangler login
 npm run deploy
 ```
 
-成功すると `https://coin-checker.<あなたのサブドメイン>.workers.dev` で公開されます。
+成功すると `https://coinchecker.<あなたのサブドメイン>.workers.dev` で公開されます。Worker 名は Cloudflare CI の `coinchecker` に合わせています（ハイフンなし）。
 
 ### 2. GitHub からの自動デプロイ
 

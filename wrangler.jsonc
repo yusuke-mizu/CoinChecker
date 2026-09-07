@@ -2,7 +2,7 @@
 // Do not add pages_build_output_dir. A Pages Git project looking for "dist" will fail.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "coin-checker",
+  "name": "coinchecker",
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-09-07",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
@@ -16,7 +16,7 @@
   "services": [
     {
       "binding": "WORKER_SELF_REFERENCE",
-      "service": "coin-checker"
+      "service": "coinchecker"
     }
   ]
 }
