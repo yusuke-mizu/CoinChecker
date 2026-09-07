@@ -4,7 +4,7 @@ import { loadMarketEnv } from "@/lib/analysis/market-env";
 import { toCompactUsdt } from "@/lib/market-data/provider";
 import { mapPool } from "@/lib/util/pool";
 import type { SharedMarketContext, TimeframeIndicators } from "@/lib/types/scoring";
-import type { TickerSnapshot } from "@/lib/types/market";
+import { DECISION_EMPTY } from "@/lib/analysis/listed-only";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -67,6 +67,7 @@ export async function POST(request: Request) {
           rankShort: null,
           reversal: null,
           futures: null,
+          ...DECISION_EMPTY,
           contract: null,
         };
       }

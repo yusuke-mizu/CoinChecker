@@ -1,4 +1,4 @@
-import { listedWithoutPublicPerp } from "@/lib/analysis/listed-only";
+import { listedWithoutPublicPerp, DECISION_EMPTY } from "@/lib/analysis/listed-only";
 import { fetchBtccUsdtSymbols } from "@/lib/exchanges/btcc";
 import { okxSwapProvider } from "@/lib/market-data/okx-provider";
 import { fetchVenueOhlcv, fetchVenueTicker, VENUE_LABEL } from "@/lib/market-data/venue-router";
@@ -7,7 +7,10 @@ import { HttpError } from "@/lib/market-data/http";
 import { computeTimeframeIndicators } from "@/lib/scoring/indicators";
 import { scoreDirection } from "@/lib/scoring/engine";
 import { classifySignal } from "@/lib/scoring/signal";
-import { scoreReversal } from "@/lib/scoring/reversal";
+import { assessRegime } from "@/lib/scoring/regime";
+import { scoreEntryTiming } from "@/lib/scoring/entry-timing";
+import { confidenceFrom, decideSetup, nextEntryWindow } from "@/lib/scoring/setup";
+import { dataSourceDisplay } from "@/lib/data/provider-mode";
 import { loadFuturesPositioning } from "@/lib/analysis/futures-data";
 import { assessCandleQuality } from "@/lib/scoring/quality";
 import { btcReturnCorrelation, HIGH_BTC_CORR } from "@/lib/correlation/pearson";
@@ -64,6 +67,7 @@ function baseAnalysis(
     rankShort: null,
     reversal: null,
     futures: null,
+    ...DECISION_EMPTY,
     contract: {
       contractType: "USDT-M Perpetual",
       quoteAsset: "USDT",
@@ -173,8 +177,14 @@ export async function analyzeSymbol(
   const futures = await loadFuturesPositioning(compact, tf4h, tf1h, tf15m, venue);
   if (!futures.availableOi) notes.push("OI unavailable");
   if (!futures.availableFunding) notes.push("Funding unavailable");
-  const long = scoreDirection("long", { market, tf4h, tf1h, tf15m, futures });
-  const short = scoreDirection("short", { market, tf4h, tf1h, tf15m, futures });
+  const regime = assessRegime({ tf4h, tf1h, tf15m, futures });
+  let long = scoreDirection("long", { market, tf4h, tf1h, tf15m, futures });
+  let short = scoreDirection("short", { market, tf4h, tf1h, tf15m, futures });
+  if (regime.rangeScore >= 80 && !regime.breakout) {
+    long = { ...long, total: Math.round(long.total * 0.5) };
+    short = { ...short, total: Math.round(short.total * 0.5) };
+    notes.push("RANGE — ENTRY SCORE damped (no auto exit)");
+  }
   const reversal = scoreReversal({
     tf4h,
     tf1h,
@@ -191,6 +201,35 @@ export async function analyzeSymbol(
   if (btcCorrelation != null && Math.abs(btcCorrelation) >= HIGH_BTC_CORR && compact !== "BTCUSDT") {
     notes.push(`High BTC 1H return correlation (${btcCorrelation.toFixed(2)})`);
   }
+
+  const side = (classified.difference ?? 0) >= 0 ? "long" : "short";
+  const timing = scoreEntryTiming({
+    tf4h,
+    tf1h,
+    tf15m,
+    btc4h: btc4hForMarket,
+    futures,
+    regime,
+    btcCorrelation,
+    side,
+  });
+  const setup = decideSetup({
+    long,
+    short,
+    regime,
+    timing,
+    reversal,
+    tf4hTrend: tf4h?.trend,
+    tf1hTrend: tf1h?.trend,
+    tf15mTrend: tf15m?.trend,
+  });
+  const confidence = confidenceFrom({
+    hasOi: futures.availableOi,
+    hasFunding: futures.availableFunding,
+    tfCount: [tf4h, tf1h, tf15m].filter(Boolean).length,
+  });
+  const nextWindow = nextEntryWindow(timing, regime);
+  const src = dataSourceDisplay();
 
   return {
     symbol: compact,
@@ -211,6 +250,12 @@ export async function analyzeSymbol(
     rankShort: null,
     reversal,
     futures,
+    regime,
+    timing,
+    setup,
+    confidence,
+    nextWindow,
+    dataSourceLabel: src.label,
     contract: {
       contractType: "USDT-M Perpetual",
       quoteAsset: "USDT",

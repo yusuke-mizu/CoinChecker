@@ -1,5 +1,8 @@
 import type { CoreTimeframe, DataIssueCode, TickerSnapshot } from "./market";
 import type { CandleVenue } from "./venue";
+import type { RegimeSnapshot } from "@/lib/scoring/regime";
+import type { TimingAssessment } from "@/lib/scoring/entry-timing";
+import type { SetupVerdict } from "@/lib/scoring/setup";
 
 export type TrendLabel =
   | "Strong Bullish"
@@ -95,6 +98,12 @@ export type SymbolAnalysis = {
   rankShort: number | null;
   reversal: ReversalAssessment | null;
   futures: FuturesPositioning | null;
+  regime: RegimeSnapshot | null;
+  timing: TimingAssessment | null;
+  setup: SetupVerdict | null;
+  confidence: "HIGH" | "MEDIUM" | "LOW" | null;
+  nextWindow: { label: string; confidence: "LOW" | "MEDIUM" | "HIGH"; reasons: string[] } | null;
+  dataSourceLabel: string | null;
   contract: {
     contractType: "USDT-M Perpetual";
     quoteAsset: "USDT";
@@ -190,6 +199,8 @@ export type MarketEnvSnapshot = {
   btc1hCloses: number[];
   dominancePct: number | null;
   dominanceNote: string;
+  dataSourceLabel: string;
+  dataSourceTest: boolean;
   updatedAt: string;
   notes: string[];
 };

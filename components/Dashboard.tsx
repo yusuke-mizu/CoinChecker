@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HIGH_BTC_CORR } from "@/lib/correlation/pearson";
 import { computeMarketRisk } from "@/lib/scoring/market-risk";
-import { applyRanks, topLong, topReversal, topShort } from "@/lib/scoring/ranking";
+import { applyRanks, topLong, topReversal, topShort, topTiming } from "@/lib/scoring/ranking";
 import { DATA_SOURCE_NOTES, DISCLAIMER } from "@/lib/analysis/notes";
-import { listedWithoutPublicPerp, NO_PUBLIC_PERP } from "@/lib/analysis/listed-only";
+import { listedWithoutPublicPerp, NO_PUBLIC_PERP, DECISION_EMPTY } from "@/lib/analysis/listed-only";
 import type { TickerSnapshot, PerpetualContract } from "@/lib/types/market";
 import type { CandleVenue } from "@/lib/types/venue";
 import type {
@@ -272,6 +272,7 @@ export function Dashboard() {
               rankShort: null,
               reversal: null,
               futures: null,
+              ...DECISION_EMPTY,
               contract: null,
             });
           }

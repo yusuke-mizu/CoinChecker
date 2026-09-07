@@ -35,7 +35,12 @@ export function topShort(rows: SymbolAnalysis[], limit = 5): SymbolAnalysis[] {
     .slice(0, limit);
 }
 
-export function topReversal(
+export function topTiming(rows: SymbolAnalysis[], limit = 5): SymbolAnalysis[] {
+  return [...rows]
+    .filter((row) => row.status === "ok" && row.timing)
+    .sort((a, b) => (b.timing?.score ?? 0) - (a.timing?.score ?? 0))
+    .slice(0, limit);
+}
   rows: SymbolAnalysis[],
   side: "bullish" | "bearish",
   limit = 5,

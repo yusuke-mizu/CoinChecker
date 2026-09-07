@@ -4,9 +4,11 @@ import { assessCandleQuality } from "@/lib/scoring/quality";
 import { computeTimeframeIndicators } from "@/lib/scoring/indicators";
 import { scoreDirection } from "@/lib/scoring/engine";
 import { classifySignal } from "@/lib/scoring/signal";
-import { scoreReversal } from "@/lib/scoring/reversal";
+import { dataSourceDisplay } from "@/lib/data/provider-mode";
+import { assessRegime } from "@/lib/scoring/regime";
+import { scoreEntryTiming } from "@/lib/scoring/entry-timing";
+import { confidenceFrom, decideSetup, nextEntryWindow } from "@/lib/scoring/setup";
 import { loadFuturesPositioning } from "@/lib/analysis/futures-data";
-import { getTtlCache, setTtlCache } from "@/lib/util/ttl-cache";
 import type { FuturesPositioning, MarketEnvSnapshot, SymbolAnalysis, TimeframeIndicators } from "@/lib/types/scoring";
 
 const CACHE_KEY = "market-env-v1";
@@ -31,6 +33,35 @@ function btcAnalysis(
     long && short
       ? classifySignal(long, short, reversal)
       : { difference: null, bias: null, signal: "DATA INSUFFICIENT" as const };
+  const regime =
+    tf4h || tf1h || tf15m ? assessRegime({ tf4h, tf1h, tf15m, futures }) : null;
+  const src = dataSourceDisplay();
+  const timing =
+    long && short && regime
+      ? scoreEntryTiming({
+          tf4h,
+          tf1h,
+          tf15m,
+          btc4h: tf4h,
+          futures,
+          regime,
+          btcCorrelation: 1,
+          side: (classified.difference ?? 0) >= 0 ? "long" : "short",
+        })
+      : null;
+  const setup =
+    long && short && regime && timing
+      ? decideSetup({
+          long,
+          short,
+          regime,
+          timing,
+          reversal,
+          tf4hTrend: tf4h?.trend,
+          tf1hTrend: tf1h?.trend,
+          tf15mTrend: tf15m?.trend,
+        })
+      : null;
   return {
     symbol: "BTCUSDT",
     display: "BTC/USDT",
@@ -54,6 +85,16 @@ function btcAnalysis(
     rankShort: null,
     reversal,
     futures,
+    regime,
+    timing,
+    setup,
+    confidence: long && short ? confidenceFrom({
+      hasOi: Boolean(futures?.availableOi),
+      hasFunding: Boolean(futures?.availableFunding),
+      tfCount: [tf4h, tf1h, tf15m].filter(Boolean).length,
+    }) : "LOW",
+    nextWindow: timing && regime ? nextEntryWindow(timing, regime) : null,
+    dataSourceLabel: src.label,
     contract: {
       contractType: "USDT-M Perpetual",
       quoteAsset: "USDT",
@@ -129,6 +170,8 @@ export async function loadMarketEnv(force = false): Promise<MarketEnvSnapshot> {
     btc1hCloses: c1.candles.map((c) => c.close),
     dominancePct,
     dominanceNote,
+    dataSourceLabel: dataSourceDisplay().label,
+    dataSourceTest: dataSourceDisplay().testMode,
     updatedAt: new Date().toISOString(),
     notes,
   };

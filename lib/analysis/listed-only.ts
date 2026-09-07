@@ -4,6 +4,15 @@ import type { SymbolAnalysis } from "@/lib/types/scoring";
 
 export const NO_PUBLIC_PERP = "btcc-listed-no-public-perp";
 
+export const DECISION_EMPTY = {
+  regime: null,
+  timing: null,
+  setup: null,
+  confidence: null as "HIGH" | "MEDIUM" | "LOW" | null,
+  nextWindow: null,
+  dataSourceLabel: null as string | null,
+};
+
 export function listedWithoutPublicPerp(
   symbol: string,
   ticker: TickerSnapshot | null,
@@ -30,6 +39,7 @@ export function listedWithoutPublicPerp(
     rankShort: null,
     reversal: null,
     futures: null,
+    ...DECISION_EMPTY,
     contract: null,
   };
 }

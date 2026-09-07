@@ -1,6 +1,6 @@
 import { fetchBtccUsdtSymbols } from "@/lib/exchanges/btcc";
 import { loadMarketEnv } from "@/lib/analysis/market-env";
-import { DATA_SOURCE_NOTES, DISCLAIMER } from "@/lib/analysis/notes";
+import { DECISION_EMPTY } from "@/lib/analysis/listed-only";
 import type { UsdtSymbol } from "@/lib/types/market";
 import type { MarketEnvSnapshot, SymbolAnalysis } from "@/lib/types/scoring";
 
@@ -79,6 +79,7 @@ export async function runPhase13(): Promise<Phase13Result> {
         rankShort: null,
         reversal: null,
         futures: null,
+        ...DECISION_EMPTY,
         contract: {
           contractType: "USDT-M Perpetual",
           quoteAsset: "USDT",

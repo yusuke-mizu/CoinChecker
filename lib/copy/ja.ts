@@ -22,6 +22,13 @@ export function adviceFor(row: SymbolAnalysis): Advice {
       why: "BTCCには載っているが、公開USDT-Mの足が無い（OKX / Bybit / Binance）。",
     };
   }
+  if (row.setup) {
+    return {
+      tag: row.setup.headline,
+      action: row.setup.action,
+      why: row.setup.why,
+    };
+  }
   if (row.status !== "ok") {
     return {
       tag: "データ不足",
