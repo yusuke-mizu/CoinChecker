@@ -1,0 +1,177 @@
+export function sma(values: number[], period: number): number | null {
+  if (values.length < period) return null;
+  const slice = values.slice(-period);
+  const sum = slice.reduce((acc, v) => acc + v, 0);
+  return sum / period;
+}
+
+export function emaSeries(values: number[], period: number): Array<number | null> {
+  const out: Array<number | null> = Array(values.length).fill(null);
+  if (values.length < period) return out;
+  let sum = 0;
+  for (let i = 0; i < period; i += 1) sum += values[i];
+  let prev = sum / period;
+  out[period - 1] = prev;
+  const k = 2 / (period + 1);
+  for (let i = period; i < values.length; i += 1) {
+    prev = values[i] * k + prev * (1 - k);
+    out[i] = prev;
+  }
+  return out;
+}
+
+export function lastEma(values: number[], period: number): number | null {
+  const series = emaSeries(values, period);
+  const value = series[series.length - 1];
+  return value ?? null;
+}
+
+export function rsiWilder(closes: number[], period = 14): number | null {
+  if (closes.length < period + 1) return null;
+  let gain = 0;
+  let loss = 0;
+  for (let i = 1; i <= period; i += 1) {
+    const diff = closes[i] - closes[i - 1];
+    if (diff >= 0) gain += diff;
+    else loss -= diff;
+  }
+  let avgGain = gain / period;
+  let avgLoss = loss / period;
+  for (let i = period + 1; i < closes.length; i += 1) {
+    const diff = closes[i] - closes[i - 1];
+    const g = diff > 0 ? diff : 0;
+    const l = diff < 0 ? -diff : 0;
+    avgGain = (avgGain * (period - 1) + g) / period;
+    avgLoss = (avgLoss * (period - 1) + l) / period;
+  }
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - 100 / (1 + rs);
+}
+
+export type MacdResult = {
+  macd: number | null;
+  signal: number | null;
+  hist: number | null;
+};
+
+export function macd(closes: number[], fast = 12, slow = 26, signal = 9): MacdResult {
+  if (closes.length < slow + signal) {
+    return { macd: null, signal: null, hist: null };
+  }
+  const fastEma = emaSeries(closes, fast);
+  const slowEma = emaSeries(closes, slow);
+  const macdLine: number[] = [];
+  for (let i = 0; i < closes.length; i += 1) {
+    const f = fastEma[i];
+    const s = slowEma[i];
+    if (f == null || s == null) continue;
+    macdLine.push(f - s);
+  }
+  if (macdLine.length < signal) {
+    return { macd: null, signal: null, hist: null };
+  }
+  const signalSeries = emaSeries(macdLine, signal);
+  const macdLast = macdLine[macdLine.length - 1];
+  const signalLast = signalSeries[signalSeries.length - 1];
+  if (macdLast == null || signalLast == null) {
+    return { macd: null, signal: null, hist: null };
+  }
+  return {
+    macd: macdLast,
+    signal: signalLast,
+    hist: macdLast - signalLast,
+  };
+}
+
+export type AdxResult = {
+  adx: number | null;
+  plusDi: number | null;
+  minusDi: number | null;
+};
+
+export function adx(highs: number[], lows: number[], closes: number[], period = 14): AdxResult {
+  const n = Math.min(highs.length, lows.length, closes.length);
+  if (n < period * 2) {
+    return { adx: null, plusDi: null, minusDi: null };
+  }
+
+  const tr: number[] = [];
+  const plusDm: number[] = [];
+  const minusDm: number[] = [];
+  for (let i = 1; i < n; i += 1) {
+    const upMove = highs[i] - highs[i - 1];
+    const downMove = lows[i - 1] - lows[i];
+    plusDm.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    minusDm.push(downMove > upMove && downMove > 0 ? downMove : 0);
+    tr.push(
+      Math.max(
+        highs[i] - lows[i],
+        Math.abs(highs[i] - closes[i - 1]),
+        Math.abs(lows[i] - closes[i - 1]),
+      ),
+    );
+  }
+
+  const smooth = (arr: number[], p: number): number[] => {
+    const out: number[] = [];
+    let prev = arr.slice(0, p).reduce((a, b) => a + b, 0);
+    out.push(prev);
+    for (let i = p; i < arr.length; i += 1) {
+      prev = prev - prev / p + arr[i];
+      out.push(prev);
+    }
+    return out;
+  };
+
+  const trs = smooth(tr, period);
+  const pDm = smooth(plusDm, period);
+  const mDm = smooth(minusDm, period);
+  const dx: number[] = [];
+  for (let i = 0; i < trs.length; i += 1) {
+    const plusDi = trs[i] === 0 ? 0 : (100 * pDm[i]) / trs[i];
+    const minusDi = trs[i] === 0 ? 0 : (100 * mDm[i]) / trs[i];
+    const denom = plusDi + minusDi;
+    dx.push(denom === 0 ? 0 : (100 * Math.abs(plusDi - minusDi)) / denom);
+  }
+  if (dx.length < period) {
+    return { adx: null, plusDi: null, minusDi: null };
+  }
+
+  let adxValue = dx.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < dx.length; i += 1) {
+    adxValue = (adxValue * (period - 1) + dx[i]) / period;
+  }
+
+  const lastTr = trs[trs.length - 1];
+  return {
+    adx: adxValue,
+    plusDi: lastTr === 0 ? 0 : (100 * pDm[pDm.length - 1]) / lastTr,
+    minusDi: lastTr === 0 ? 0 : (100 * mDm[mDm.length - 1]) / lastTr,
+  };
+}
+
+export function volumeRatio(volumes: number[], period = 20): number | null {
+  if (volumes.length < period + 1) return null;
+  const current = volumes[volumes.length - 1];
+  const avg = sma(volumes.slice(0, -1), period);
+  if (avg == null || avg === 0) return null;
+  return current / avg;
+}
+
+export type StructureLabel = "HH_HL" | "LH_LL" | "MIXED" | "UNKNOWN";
+
+export function priceStructure(highs: number[], lows: number[], lookback = 8): StructureLabel {
+  if (highs.length < lookback * 2 || lows.length < lookback * 2) return "UNKNOWN";
+  const recentHigh = Math.max(...highs.slice(-lookback));
+  const prevHigh = Math.max(...highs.slice(-lookback * 2, -lookback));
+  const recentLow = Math.min(...lows.slice(-lookback));
+  const prevLow = Math.min(...lows.slice(-lookback * 2, -lookback));
+  const hh = recentHigh > prevHigh;
+  const hl = recentLow > prevLow;
+  const lh = recentHigh < prevHigh;
+  const ll = recentLow < prevLow;
+  if (hh && hl) return "HH_HL";
+  if (lh && ll) return "LH_LL";
+  return "MIXED";
+}
