@@ -5,6 +5,7 @@ import { HIGH_BTC_CORR } from "@/lib/correlation/pearson";
 import { computeMarketRisk } from "@/lib/scoring/market-risk";
 import { applyRanks, topLong, topReversal, topShort } from "@/lib/scoring/ranking";
 import { DATA_SOURCE_NOTES, DISCLAIMER } from "@/lib/analysis/notes";
+import { listedWithoutPublicPerp, NO_PUBLIC_PERP } from "@/lib/analysis/listed-only";
 import type { TickerSnapshot, PerpetualContract } from "@/lib/types/market";
 import type { CandleVenue } from "@/lib/types/venue";
 import type {
@@ -106,7 +107,7 @@ export function Dashboard() {
   const [rows, setRows] = useState<SymbolAnalysis[]>([]);
   const [market, setMarket] = useState<MarketEnvSnapshot | null>(null);
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<"all" | "long" | "short" | "error">("all");
+  const [filter, setFilter] = useState<"all" | "long" | "short" | "listed" | "error">("all");
   const [sortKey, setSortKey] = useState<SortKey>("long");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [selected, setSelected] = useState<SymbolAnalysis | null>(null);
@@ -139,7 +140,8 @@ export function Dashboard() {
     if (q) next = next.filter((r) => r.symbol.includes(q) || r.display.includes(q));
     if (filter === "long") next = next.filter((r) => (r.long?.total ?? 0) >= 60 && r.signal.includes("LONG"));
     if (filter === "short") next = next.filter((r) => (r.short?.total ?? 0) >= 60 && r.signal.includes("SHORT"));
-    if (filter === "error") next = next.filter((r) => r.status !== "ok");
+    if (filter === "listed") next = next.filter((r) => r.dataSource === NO_PUBLIC_PERP);
+    if (filter === "error") next = next.filter((r) => r.status !== "ok" && r.dataSource !== NO_PUBLIC_PERP);
     const dir = sortDir === "asc" ? 1 : -1;
     return [...next].sort((a, b) => dir * compareRows(a, b, sortKey));
   }, [ranked, query, filter, sortKey, sortDir]);
@@ -216,16 +218,21 @@ export function Dashboard() {
       setBtccCount(universe.btccCount);
       const skipped = universe.skippedNoVenue ?? universe.skippedNoOkx;
       if (skipped) {
-        setWarning(
-          `${universe.warning ?? ""} BTCC掲載のうち先物足が取れず除外: ${skipped}件。採点対象: ${universe.symbols.length}件。`.trim(),
-        );
+        setWarning(universe.warning);
       }
       const symbols = universe.symbols;
+      const venues = universe.venues ?? {};
+      const listedOnly = symbols.filter((s) => !venues[s]);
+      const toScore = symbols.filter((s) => venues[s]);
       setProgress({ done: 0, total: symbols.length });
-      const collected: SymbolAnalysis[] = [];
-      for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
+      const collected: SymbolAnalysis[] = listedOnly.map((symbol) =>
+        listedWithoutPublicPerp(symbol, universe.tickers[symbol] ?? null),
+      );
+      setRows([...collected]);
+      setProgress({ done: collected.length, total: symbols.length });
+      for (let i = 0; i < toScore.length; i += BATCH_SIZE) {
         if (abortRef.current) break;
-        const batch = symbols.slice(i, i + BATCH_SIZE);
+        const batch = toScore.slice(i, i + BATCH_SIZE);
         const tickers: Record<string, TickerSnapshot> = {};
         for (const symbol of batch) {
           const snap = universe.tickers[symbol];
@@ -501,7 +508,7 @@ export function Dashboard() {
               placeholder="銘柄検索"
               className="h-9 w-40 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm"
             />
-            {(["all", "long", "short", "error"] as const).map((key) => (
+            {(["all", "long", "short", "listed", "error"] as const).map((key) => (
               <button
                 key={key}
                 type="button"
@@ -510,7 +517,15 @@ export function Dashboard() {
                   filter === key ? "bg-zinc-100 text-zinc-950" : "border border-zinc-700 text-zinc-400"
                 }`}
               >
-                {key === "all" ? "全部" : key === "long" ? "買い候補" : key === "short" ? "売り候補" : "データエラー"}
+                {key === "all"
+                  ? "全部"
+                  : key === "long"
+                    ? "買い候補"
+                    : key === "short"
+                      ? "売り候補"
+                      : key === "listed"
+                        ? "掲載のみ"
+                        : "データエラー"}
               </button>
             ))}
           </section>

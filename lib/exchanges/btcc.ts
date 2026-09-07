@@ -38,7 +38,7 @@ export async function fetchBtccUsdtSymbols(): Promise<UsdtSymbol[]> {
   const collected: UsdtSymbol[] = [];
   const seen = new Set<string>();
 
-  for (let page = 1; page <= 8; page += 1) {
+  for (let page = 1; page <= 12; page += 1) {
     let tickers: CoinGeckoTicker[] = [];
     try {
       const data = await fetchJson<CoinGeckoTickersResponse>(
@@ -56,7 +56,6 @@ export async function fetchBtccUsdtSymbols(): Promise<UsdtSymbol[]> {
       const base = (ticker.base ?? "").toUpperCase().trim();
       const target = (ticker.target ?? "").toUpperCase().trim();
       if (!base || target !== "USDT") continue;
-      if (ticker.is_stale || ticker.is_anomaly) continue;
       const symbol = `${base}USDT`;
       if (seen.has(symbol)) continue;
       seen.add(symbol);
@@ -72,8 +71,8 @@ export async function fetchBtccUsdtSymbols(): Promise<UsdtSymbol[]> {
     }
 
     if (tickers.length < 100) break;
-    if (page < 8) {
-      await new Promise((resolve) => setTimeout(resolve, 1600));
+    if (page < 12) {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
     }
   }
 

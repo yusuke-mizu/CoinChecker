@@ -10,7 +10,7 @@ import { getTtlCache, setTtlCache } from "@/lib/util/ttl-cache";
 import type { PerpetualContract, TickerSnapshot, UsdtSymbol } from "@/lib/types/market";
 import type { CandleVenue } from "@/lib/types/venue";
 
-const CACHE_KEY = "universe-btcc-venues-v1";
+const CACHE_KEY = "universe-btcc-all-listed-v1";
 const CACHE_MS = 5 * 60_000;
 const PRIORITY = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"];
 
@@ -28,7 +28,7 @@ export type UniverseResult = {
   error: string | null;
 };
 
-function sortUniverse(symbols: string[]): string[] {
+function sortUniverse(symbols: string[], venues: Record<string, CandleVenue>): string[] {
   return [...symbols].sort((a, b) => {
     const pa = PRIORITY.indexOf(a);
     const pb = PRIORITY.indexOf(b);
@@ -37,6 +37,9 @@ function sortUniverse(symbols: string[]): string[] {
       if (pb === -1) return -1;
       return pa - pb;
     }
+    const va = venues[a] ? 0 : 1;
+    const vb = venues[b] ? 0 : 1;
+    if (va !== vb) return va - vb;
     return a.localeCompare(b);
   });
 }
@@ -65,17 +68,20 @@ export async function loadUniverse(force = false): Promise<UniverseResult> {
   let source = "coingecko-btcc ∩ (okx|bybit|binance usdt-m)";
 
   if (btccResult.symbols.length > 0) {
+    source = "coingecko-btcc-all (ohlcv: okx|bybit|binance when available)";
     for (const row of btccResult.symbols) {
+      selected.push(row.symbol);
       const venue = pickVenue(row.symbol, coverage);
       if (venue) {
         venues[row.symbol] = venue;
-        selected.push(row.symbol);
       } else {
         skippedNoVenue += 1;
       }
     }
     warning =
-      "対象はCoinGecko上のBTCC USDT銘柄です。BTCC公式の足・建玉はログイン必須のため使えません。同じ名前のUSDT-M先物足を OKX → Bybit → Binance の順で使います。どの取引所にも先物が無い名前は採点しません。";
+      skippedNoVenue > 0
+        ? `BTCC掲載は全件表示します。うち ${skippedNoVenue} 件は公開USDT-M足が無く採点できません（価格のみ）。足がある銘柄は OKX → Bybit → Binance です。`
+        : "対象はCoinGecko上のBTCC USDT銘柄です。足は OKX → Bybit → Binance の公開USDT-Mです。";
   } else {
     selected = Object.keys(coverage.okx);
     for (const symbol of selected) venues[symbol] = "okx";
@@ -84,12 +90,25 @@ export async function loadUniverse(force = false): Promise<UniverseResult> {
       "BTCC銘柄一覧の取得に失敗したため、OKXのUSDT-M先物一覧で代替しています。BTCC掲載ではありません。";
   }
 
-  selected = sortUniverse(selected);
+  selected = sortUniverse(selected, venues);
   const contracts = mergeContracts(coverage, venues);
   const tickers: Record<string, TickerSnapshot> = {};
+  for (const row of btccResult.symbols) {
+    const snap = tickersAll[row.symbol];
+    if (snap) {
+      tickers[row.symbol] = snap;
+    } else if (row.lastPrice != null) {
+      tickers[row.symbol] = {
+        last: row.lastPrice,
+        change24hPct: null,
+        high24h: null,
+        low24h: null,
+        volume24h: row.volume,
+      };
+    }
+  }
   for (const symbol of selected) {
-    const snap = tickersAll[symbol];
-    if (snap) tickers[symbol] = snap;
+    if (!tickers[symbol] && tickersAll[symbol]) tickers[symbol] = tickersAll[symbol];
   }
 
   const result: UniverseResult = {

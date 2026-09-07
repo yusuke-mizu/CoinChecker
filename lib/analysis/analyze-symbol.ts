@@ -1,3 +1,4 @@
+import { listedWithoutPublicPerp } from "@/lib/analysis/listed-only";
 import { fetchBtccUsdtSymbols } from "@/lib/exchanges/btcc";
 import { okxSwapProvider } from "@/lib/market-data/okx-provider";
 import { fetchVenueOhlcv, fetchVenueTicker, VENUE_LABEL } from "@/lib/market-data/venue-router";
@@ -84,7 +85,10 @@ export async function analyzeSymbol(
 ): Promise<SymbolAnalysis> {
   const compact = toCompactUsdt(symbol);
   const display = toDisplaySymbol(compact);
-  const venue = context.venues?.[compact] ?? "okx";
+  const venue = context.venues ? (context.venues[compact] ?? null) : "okx";
+  if (!venue) {
+    return listedWithoutPublicPerp(compact, context.tickers?.[compact] ?? null);
+  }
   const notes: string[] = [`足・建玉: ${VENUE_LABEL[venue]}（BTCC公式足はログイン必須のため未使用）`];
   const indicators: Partial<Record<CoreTimeframe, TimeframeIndicators>> = {};
   let closes1h: number[] = [];

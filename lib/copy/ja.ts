@@ -1,3 +1,4 @@
+import { NO_PUBLIC_PERP } from "@/lib/analysis/listed-only";
 import type {
   PositioningStructure,
   ReversalSide,
@@ -14,6 +15,13 @@ export type Advice = {
 
 export function adviceFor(row: SymbolAnalysis): Advice {
   const rev = row.reversal?.signal ?? "NO REVERSAL";
+  if (row.dataSource === NO_PUBLIC_PERP) {
+    return {
+      tag: "掲載のみ",
+      action: "一覧には出すが、今は採点できない。",
+      why: "BTCCには載っているが、公開USDT-Mの足が無い（OKX / Bybit / Binance）。",
+    };
+  }
   if (row.status !== "ok") {
     return {
       tag: "データ不足",
