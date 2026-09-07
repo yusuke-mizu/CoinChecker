@@ -76,12 +76,9 @@ gh repo create CoinChecker --private --source=. --remote=origin --push
 
 このアプリは静的サイトではありません。`/api/*` の Route Handler があるため、**Cloudflare Pages（output: `dist`）では動きません。** OpenNext で **Workers** にデプロイします。
 
-`npm run build`（`next build`）が成功しても、Pages が `dist` を探すと次で落ちます。
+Workers Builds のデフォルト `npm run build` は OpenNext です（`next build` だけだと `.open-next` が無く、`wrangler deploy` が失敗します）。
 
-```
-Error: Output directory "dist" not found.
-Failed: build output directory not found
-```
+Pages で `dist` を探す設定は使わないでください。
 
 ### 1. 初回デプロイ（手元）
 
@@ -104,7 +101,7 @@ npm run deploy
 
 | 項目 | 値 |
 | --- | --- |
-| Build command | `npm run build:cloudflare` |
+| Build command | `npm run build` |
 | Deploy command | `npx wrangler deploy` |
 | Root directory | `/`（リポジトリ直下） |
 | Output directory | 空のまま（`dist` にしない） |
