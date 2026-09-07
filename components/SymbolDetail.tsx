@@ -45,7 +45,41 @@ export function SymbolDetail({
             <div className="text-lg font-semibold">{adviceFor(row).tag}</div>
             <p className="mt-1 text-sm leading-5">{adviceFor(row).action}</p>
             <p className="mt-1 text-xs opacity-80">{adviceFor(row).why}</p>
+            <p className="mt-2 text-[11px] opacity-70">
+              Score represents signal strength, not probability of future price movement.
+            </p>
           </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Mini label="買い ENTRY" value={row.long?.total} />
+            <Mini label="売り ENTRY" value={row.short?.total} />
+            <Mini label="TIMING" value={row.timing?.score} />
+            <Mini label="信頼度" value={row.confidence} />
+          </div>
+          <p className="text-xs text-zinc-400">
+            {row.regime?.regime ?? "—"} · Trend {row.regime?.trendScore ?? "—"} · Range {row.regime?.rangeScore ?? "—"} ·
+            Drift {row.regime?.driftScore ?? "—"} {row.regime?.driftSide ?? ""}
+          </p>
+          {row.nextWindow ? (
+            <p className="text-xs text-zinc-400">
+              NEXT WINDOW {row.nextWindow.label}（{row.nextWindow.confidence}）· {row.nextWindow.reasons[0]}
+            </p>
+          ) : null}
+          {row.timing?.waitReasons.length ? (
+            <ul className="list-disc pl-4 text-xs text-amber-200">
+              {row.timing.waitReasons.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+          ) : null}
+          {row.timing?.items.length ? (
+            <div className="text-[11px] text-zinc-500">
+              {row.timing.items.map((item) => (
+                <div key={item.key}>
+                  {item.key} {item.points}/{item.max} · {item.reason}
+                </div>
+              ))}
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-zinc-400">
               買い点 {row.long?.total ?? "—"} / 売り点 {row.short?.total ?? "—"} · 差 {row.difference ?? "—"}
@@ -157,6 +191,15 @@ export function SymbolDetail({
           ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+function Mini({ label, value }: { label: string; value: string | number | null | undefined }) {
+  return (
+    <div className="rounded-md border border-zinc-800 px-2 py-2">
+      <div className="text-[10px] text-zinc-500">{label}</div>
+      <div className="font-mono text-lg text-zinc-100">{value ?? "—"}</div>
     </div>
   );
 }

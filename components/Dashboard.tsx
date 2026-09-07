@@ -131,6 +131,14 @@ export function Dashboard() {
 
   const longs = useMemo(() => topLong(ranked, 5), [ranked]);
   const shorts = useMemo(() => topShort(ranked, 5), [ranked]);
+  const timings = useMemo(() => topTiming(ranked, 5), [ranked]);
+  const waiting = useMemo(
+    () =>
+      [...ranked]
+        .filter((r) => r.setup?.kind === "ENTRY_WAIT")
+        .slice(0, 5),
+    [ranked],
+  );
   const bullRev = useMemo(() => topReversal(ranked, "bullish", 5), [ranked]);
   const bearRev = useMemo(() => topReversal(ranked, "bearish", 5), [ranked]);
 
@@ -331,12 +339,11 @@ export function Dashboard() {
       <header className="flex flex-col gap-3 border-b border-zinc-800 pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-xs font-medium tracking-[0.18em] text-zinc-500">
-            DECISION SUPPORT · NO AUTO TRADING
+            {market?.dataSourceLabel ?? "DATA SOURCE: OKX / TEST MODE"}
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-50">Coin Checker</h1>
           <p className="mt-1 max-w-3xl text-sm text-zinc-400">
-            USDT-M先物だけを対象に、買い・売り・反転・決済検討を日本語で出します。
-            注文・決済はしません。確定シグナルではありません。
+            銘柄の強さ（ENTRY）と今のタイミングは別点です。注文・決済はしません。点は一致度であり、上昇確率ではありません。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -432,7 +439,12 @@ export function Dashboard() {
               subPositive={(btc?.ticker?.change24hPct ?? 0) >= 0}
             />
             <StatusCard
-              label="BTC 4時間 トレンド"
+              label="MARKET REGIME"
+              value={btc?.regime?.regime ?? "—"}
+              sub={`Trend ${btc?.regime?.trendScore ?? "—"} · Range ${btc?.regime?.rangeScore ?? "—"} · Drift ${btc?.regime?.driftScore ?? "—"}`}
+            />
+            <StatusCard
+              label="BTC 4時間"
               value={trendJa(btc?.indicators["4h"]?.trend)}
               sub={`RSI ${formatNum(btc?.indicators["4h"]?.rsi, 1)} · ADX ${formatNum(btc?.indicators["4h"]?.adx, 1)}`}
             />
@@ -490,6 +502,10 @@ export function Dashboard() {
             <RankList title="売り候補 TOP" rows={shorts} accent="rose" onSelect={setSelected} />
           </section>
           <section className="grid gap-4 lg:grid-cols-2">
+            <RankList title="ENTRY TIMING が高い" rows={timings} accent="emerald" onSelect={setSelected} score="timing" />
+            <RankList title="ENTRY WAIT（強いが今は待つ）" rows={waiting} accent="rose" onSelect={setSelected} score="timing" />
+          </section>
+          <section className="grid gap-4 lg:grid-cols-2">
             <RankList title="反転↑（売り持ち注意）" rows={bullRev} accent="emerald" onSelect={setSelected} score="revBull" />
             <RankList title="反転↓（買い持ち注意）" rows={bearRev} accent="rose" onSelect={setSelected} score="revBear" />
           </section>
@@ -542,7 +558,9 @@ export function Dashboard() {
                   <Th label="24h" onClick={() => toggleSort("change")} />
                   <Th label="買い点" onClick={() => toggleSort("long")} />
                   <Th label="売り点" onClick={() => toggleSort("short")} />
-                  <Th label="差" onClick={() => toggleSort("diff")} />
+                  <th className="px-2 py-2 font-medium">タイミング</th>
+                  <th className="px-2 py-2 font-medium">Regime</th>
+                  <th className="px-2 py-2 font-medium">先物</th>
                   <Th label="4時間" onClick={() => toggleSort("trend4h")} />
                   <th className="px-2 py-2 font-medium">1時間</th>
                   <th className="px-2 py-2 font-medium">15分</th>
@@ -584,7 +602,9 @@ export function Dashboard() {
                       </td>
                       <td className="px-2 py-2 font-mono text-emerald-300">{row.long?.total ?? "—"}</td>
                       <td className="px-2 py-2 font-mono text-rose-300">{row.short?.total ?? "—"}</td>
-                      <td className="px-2 py-2 font-mono">{row.difference ?? "—"}</td>
+                      <td className="px-2 py-2 font-mono">{row.timing?.score ?? "—"}</td>
+                      <td className="px-2 py-2 text-[10px]">{row.regime?.regime ?? "—"}</td>
+                      <td className="px-2 py-2 font-mono">{row.futures?.score ?? "—"}</td>
                       <td className="px-2 py-2">{trendJa(row.indicators["4h"]?.trend)}</td>
                       <td className="px-2 py-2">{trendJa(row.indicators["1h"]?.trend)}</td>
                       <td className="px-2 py-2">{trendJa(row.indicators["15m"]?.trend)}</td>
@@ -662,7 +682,7 @@ function RankList({
   rows: SymbolAnalysis[];
   accent: "emerald" | "rose";
   onSelect: (row: SymbolAnalysis) => void;
-  score?: "entry" | "revBull" | "revBear";
+  score?: "entry" | "revBull" | "revBear" | "timing";
 }) {
   const color = accent === "emerald" ? "text-emerald-300" : "text-rose-300";
   return (
@@ -678,11 +698,17 @@ function RankList({
                 ? row.reversal?.bullish
                 : score === "revBear"
                   ? row.reversal?.bearish
-                  : accent === "emerald"
-                    ? row.long?.total
-                    : row.short?.total;
+                  : score === "timing"
+                    ? row.timing?.score
+                    : accent === "emerald"
+                      ? row.long?.total
+                      : row.short?.total;
             const badge =
-              score === "entry" ? signalJa(row.signal) : reversalJa(row.reversal?.signal);
+              score === "timing"
+                ? (row.timing?.label ?? adviceFor(row).tag)
+                : score === "entry"
+                  ? signalJa(row.signal)
+                  : reversalJa(row.reversal?.signal);
             const tip = adviceFor(row);
             return (
             <button

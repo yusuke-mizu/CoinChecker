@@ -7,6 +7,7 @@ import { HttpError } from "@/lib/market-data/http";
 import { computeTimeframeIndicators } from "@/lib/scoring/indicators";
 import { scoreDirection } from "@/lib/scoring/engine";
 import { classifySignal } from "@/lib/scoring/signal";
+import { scoreReversal } from "@/lib/scoring/reversal";
 import { assessRegime } from "@/lib/scoring/regime";
 import { scoreEntryTiming } from "@/lib/scoring/entry-timing";
 import { confidenceFrom, decideSetup, nextEntryWindow } from "@/lib/scoring/setup";

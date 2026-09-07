@@ -4,14 +4,16 @@ import { assessCandleQuality } from "@/lib/scoring/quality";
 import { computeTimeframeIndicators } from "@/lib/scoring/indicators";
 import { scoreDirection } from "@/lib/scoring/engine";
 import { classifySignal } from "@/lib/scoring/signal";
+import { scoreReversal } from "@/lib/scoring/reversal";
 import { dataSourceDisplay } from "@/lib/data/provider-mode";
 import { assessRegime } from "@/lib/scoring/regime";
 import { scoreEntryTiming } from "@/lib/scoring/entry-timing";
 import { confidenceFrom, decideSetup, nextEntryWindow } from "@/lib/scoring/setup";
 import { loadFuturesPositioning } from "@/lib/analysis/futures-data";
+import { getTtlCache, setTtlCache } from "@/lib/util/ttl-cache";
 import type { FuturesPositioning, MarketEnvSnapshot, SymbolAnalysis, TimeframeIndicators } from "@/lib/types/scoring";
 
-const CACHE_KEY = "market-env-v1";
+const CACHE_KEY = "market-env-v2";
 const CACHE_MS = 60_000;
 
 function btcAnalysis(
