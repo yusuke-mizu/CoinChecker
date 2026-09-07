@@ -76,7 +76,7 @@ gh repo create CoinChecker --private --source=. --remote=origin --push
 
 このアプリは静的サイトではありません。`/api/*` の Route Handler があるため、**Cloudflare Pages（output: `dist`）では動きません。** OpenNext で **Workers** にデプロイします。
 
-Workers Builds のデフォルト `npm run build` は OpenNext です（`next build` だけだと `.open-next` が無く、`wrangler deploy` が失敗します）。
+Workers Builds のデフォルト `npm run build` は OpenNext です。OpenNext 内部では `npx next build` を呼びます（`package.json` の `build` を再度叩くと無限ループしてタイムアウトします）。`next build` だけだと `.open-next` が無く、`wrangler deploy` が失敗します。
 
 Pages で `dist` を探す設定は使わないでください。
 
