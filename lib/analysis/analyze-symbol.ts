@@ -1,5 +1,6 @@
 import { fetchBtccUsdtSymbols } from "@/lib/exchanges/btcc";
 import { okxSwapProvider } from "@/lib/market-data/okx-provider";
+import { fetchVenueOhlcv, fetchVenueTicker, VENUE_LABEL } from "@/lib/market-data/venue-router";
 import { toCompactUsdt, toDisplaySymbol } from "@/lib/market-data/provider";
 import { HttpError } from "@/lib/market-data/http";
 import { computeTimeframeIndicators } from "@/lib/scoring/indicators";
@@ -83,14 +84,15 @@ export async function analyzeSymbol(
 ): Promise<SymbolAnalysis> {
   const compact = toCompactUsdt(symbol);
   const display = toDisplaySymbol(compact);
-  const notes: string[] = [];
+  const venue = context.venues?.[compact] ?? "okx";
+  const notes: string[] = [`足・建玉: ${VENUE_LABEL[venue]}（BTCC公式足はログイン必須のため未使用）`];
   const indicators: Partial<Record<CoreTimeframe, TimeframeIndicators>> = {};
   let closes1h: number[] = [];
 
   let ticker = context.tickers?.[compact] ?? null;
   if (!ticker) {
     try {
-      ticker = await okxSwapProvider.fetchTicker(compact);
+      ticker = await fetchVenueTicker(venue, compact);
     } catch (error) {
       notes.push(`Ticker: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -98,7 +100,7 @@ export async function analyzeSymbol(
 
   const timeframeResults = await Promise.allSettled(
     CORE.map(async (timeframe) => {
-      const candles = await okxSwapProvider.fetchOhlcv(compact, timeframe, CANDLE_LIMIT);
+      const candles = await fetchVenueOhlcv(venue, compact, timeframe, CANDLE_LIMIT);
       const quality = assessCandleQuality(candles, timeframe);
       return { timeframe, candles, quality };
     }),
@@ -138,6 +140,7 @@ export async function analyzeSymbol(
       ticker,
       signal: status === "DATA_INSUFFICIENT" ? "DATA INSUFFICIENT" : "DATA ERROR",
       notes,
+      dataSource: `${venue}-usdt-m-public`,
     });
   }
 
@@ -163,7 +166,7 @@ export async function analyzeSymbol(
     dominancePct: context.dominancePct,
     isBtc: compact === "BTCUSDT",
   };
-  const futures = await loadFuturesPositioning(compact, tf4h, tf1h, tf15m);
+  const futures = await loadFuturesPositioning(compact, tf4h, tf1h, tf15m, venue);
   if (!futures.availableOi) notes.push("OI unavailable");
   if (!futures.availableFunding) notes.push("Funding unavailable");
   const long = scoreDirection("long", { market, tf4h, tf1h, tf15m, futures });
@@ -198,7 +201,7 @@ export async function analyzeSymbol(
     indicators,
     updatedAt: new Date().toISOString(),
     notes,
-    dataSource: "okx-swap-public",
+    dataSource: `${venue}-usdt-m-public`,
     btcCorrelation,
     rankLong: null,
     rankShort: null,

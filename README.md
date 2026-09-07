@@ -6,7 +6,7 @@ BTCC掲載のUSDT銘柄を動的に取得し、4H / 1H / 15M のテクニカル�
 
 ## できること
 
-- BTCC USDT銘柄の動的取得（CoinGecko）と、OHLCV取得可能なOKX USDT SWAPとの交差
+- BTCC USDT銘柄の動的取得（CoinGecko）。足は同じ名前の公開USDT-M先物（OKX → Bybit → Binance）
 - 全銘柄のバッチ分析（1銘柄失敗でも全体は止まらない）
 - TOP LONG / TOP SHORT
 - ソート可能な一覧（価格、24h、スコア、トレンド、RSI、MACD、ADX、出来高、BTC相関、判定）

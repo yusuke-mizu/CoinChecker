@@ -1,4 +1,5 @@
 import type { CoreTimeframe, DataIssueCode, TickerSnapshot } from "./market";
+import type { CandleVenue } from "./venue";
 
 export type TrendLabel =
   | "Strong Bullish"
@@ -198,4 +199,5 @@ export type SharedMarketContext = {
   btc1hCloses: number[];
   dominancePct: number | null;
   tickers?: Record<string, TickerSnapshot>;
+  venues?: Record<string, CandleVenue>;
 };

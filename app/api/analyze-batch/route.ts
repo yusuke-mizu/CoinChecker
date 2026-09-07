@@ -19,6 +19,7 @@ export async function POST(request: Request) {
       btc1hCloses?: number[];
       dominancePct?: number | null;
       tickers?: Record<string, TickerSnapshot>;
+      venues?: Record<string, import("@/lib/types/venue").CandleVenue>;
     };
     const symbols = [...new Set((body.symbols ?? []).map(toCompactUsdt))].slice(0, MAX_SYMBOLS);
     if (symbols.length === 0) {
@@ -29,8 +30,9 @@ export async function POST(request: Request) {
       btc4h: body.btc4h ?? null,
       btc1hCloses: body.btc1hCloses ?? [],
       dominancePct: body.dominancePct ?? null,
-      tickers: body.tickers,
-    };
+        tickers: body.tickers,
+        venues: body.venues,
+      };
     if (!context.btc4h || context.btc1hCloses.length === 0) {
       const env = await loadMarketEnv();
       context = {
@@ -38,6 +40,7 @@ export async function POST(request: Request) {
         btc1hCloses: context.btc1hCloses.length ? context.btc1hCloses : env.btc1hCloses,
         dominancePct: context.dominancePct ?? env.dominancePct,
         tickers: context.tickers,
+        venues: context.venues,
       };
     }
 

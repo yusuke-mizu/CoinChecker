@@ -1,8 +1,7 @@
-import { fetchOkxFunding, fetchOkxOiHistory5m } from "@/lib/market-data/okx";
-import {
-  computeFuturesPositioning,
-  unavailableFutures,
-} from "@/lib/scoring/futures-positioning";
+import { unavailableFutures } from "@/lib/scoring/futures-positioning";
+import { computeFuturesPositioning } from "@/lib/scoring/futures-positioning";
+import { fetchVenueFunding, fetchVenueOiHistory } from "@/lib/market-data/venue-router";
+import type { CandleVenue } from "@/lib/types/venue";
 import type { FuturesPositioning, TimeframeIndicators } from "@/lib/types/scoring";
 
 export async function loadFuturesPositioning(
@@ -10,10 +9,11 @@ export async function loadFuturesPositioning(
   tf4h: TimeframeIndicators | null,
   tf1h: TimeframeIndicators | null,
   tf15m: TimeframeIndicators | null,
+  venue: CandleVenue = "okx",
 ): Promise<FuturesPositioning> {
   const [oiRes, fundRes] = await Promise.allSettled([
-    fetchOkxOiHistory5m(symbol, 100),
-    fetchOkxFunding(symbol),
+    fetchVenueOiHistory(venue, symbol, 100),
+    fetchVenueFunding(venue, symbol),
   ]);
   const oiHistory = oiRes.status === "fulfilled" ? oiRes.value : [];
   const funding =

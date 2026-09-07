@@ -6,6 +6,7 @@ import { computeMarketRisk } from "@/lib/scoring/market-risk";
 import { applyRanks, topLong, topReversal, topShort } from "@/lib/scoring/ranking";
 import { DATA_SOURCE_NOTES, DISCLAIMER } from "@/lib/analysis/notes";
 import type { TickerSnapshot, PerpetualContract } from "@/lib/types/market";
+import type { CandleVenue } from "@/lib/types/venue";
 import type {
   MarketEnvSnapshot,
   MarketRisk,
@@ -58,6 +59,8 @@ type UniverseResponse = {
   contracts?: Record<string, PerpetualContract>;
   btccCount: number;
   skippedNoOkx: number;
+  skippedNoVenue?: number;
+  venues?: Record<string, CandleVenue>;
   source: string;
   warning: string | null;
   error: string | null;
@@ -210,6 +213,13 @@ export function Dashboard() {
       setMarket(env);
       if (universe.warning) setWarning(universe.warning);
       if (universe.contracts) setContracts(universe.contracts);
+      setBtccCount(universe.btccCount);
+      const skipped = universe.skippedNoVenue ?? universe.skippedNoOkx;
+      if (skipped) {
+        setWarning(
+          `${universe.warning ?? ""} BTCC掲載のうち先物足が取れず除外: ${skipped}件。採点対象: ${universe.symbols.length}件。`.trim(),
+        );
+      }
       const symbols = universe.symbols;
       setProgress({ done: 0, total: symbols.length });
       const collected: SymbolAnalysis[] = [];
@@ -230,6 +240,7 @@ export function Dashboard() {
             btc1hCloses: env.btc1hCloses,
             dominancePct: env.dominancePct,
             tickers,
+            venues: universe.venues,
           }),
         });
         const json = (await response.json()) as { results?: SymbolAnalysis[]; error?: string };
@@ -433,14 +444,14 @@ export function Dashboard() {
             <StatusCard
               label="UPDATED"
               value={updatedAt ? new Date(updatedAt).toLocaleTimeString() : "—"}
-              sub={`${ranked.length} scored · BTCC USDT ${btccCount ?? "—"} · memory only`}
+              sub={`${ranked.length} scored · BTCC掲載 ${btccCount ?? "—"} · 先物足あり ${ranked.length} · memory only`}
             />
           </section>
 
           {btccPreview.length ? (
             <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3">
               <div className="text-[11px] tracking-[0.16em] text-zinc-500">
-                PHASE 1 · BTCC USDT SYMBOLS ({btccCount ?? btccPreview.length})
+                PHASE 1 · BTCC掲載 USDT（{btccCount ?? btccPreview.length}）
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {btccPreview.map((display) => (
