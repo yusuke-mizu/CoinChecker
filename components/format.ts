@@ -28,10 +28,10 @@ export function signalClass(signal: string): string {
   if (signal.includes("CONFLICT") || signal === "NO SIGNAL") {
     return "text-zinc-300 border-zinc-500/40 bg-zinc-500/10";
   }
+  if (signal.includes("REVERSAL")) return "text-amber-200 border-amber-400/50 bg-amber-400/10";
   if (signal.includes("VERY STRONG")) return "text-amber-200 border-amber-400/50 bg-amber-400/10";
   if (signal.includes("SHORT")) return "text-rose-200 border-rose-400/40 bg-rose-400/10";
   if (signal.includes("LONG")) return "text-emerald-200 border-emerald-400/40 bg-emerald-400/10";
-  if (signal.includes("REVERSAL")) return "text-amber-200 border-amber-400/50 bg-amber-400/10";
   if (signal.includes("WATCH")) return "text-yellow-200 border-yellow-400/40 bg-yellow-400/10";
   return "text-zinc-300 border-zinc-500/40 bg-zinc-500/10";
 }

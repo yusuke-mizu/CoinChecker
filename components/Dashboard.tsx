@@ -14,6 +14,14 @@ import type {
 import { SymbolDetail } from "@/components/SymbolDetail";
 import { TradeDesk } from "@/components/TradeDesk";
 import {
+  adviceFor,
+  macdJa,
+  reversalJa,
+  riskJa,
+  signalJa,
+  trendJa,
+} from "@/lib/copy/ja";
+import {
   formatCorr,
   formatNum,
   formatPct,
@@ -308,8 +316,8 @@ export function Dashboard() {
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-50">Coin Checker</h1>
           <p className="mt-1 max-w-3xl text-sm text-zinc-400">
-            USDT-M Perpetual のみを対象に、ENTRY / REVERSAL / EXIT を分けて表示します。
-            注文・決済・ポジション操作はありません。
+            USDT-M先物だけを対象に、買い・売り・反転・決済検討を日本語で出します。
+            注文・決済はしません。確定シグナルではありません。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -405,8 +413,8 @@ export function Dashboard() {
               subPositive={(btc?.ticker?.change24hPct ?? 0) >= 0}
             />
             <StatusCard
-              label="BTC 4H TREND"
-              value={btc?.indicators["4h"]?.trend ?? "—"}
+              label="BTC 4時間 トレンド"
+              value={trendJa(btc?.indicators["4h"]?.trend)}
               sub={`RSI ${formatNum(btc?.indicators["4h"]?.rsi, 1)} · ADX ${formatNum(btc?.indicators["4h"]?.adx, 1)}`}
             />
             <StatusCard
@@ -416,11 +424,11 @@ export function Dashboard() {
             />
             <StatusCard label="DXY / NASDAQ / 10Y" value="—" sub="公式の無料API未配線（0点）" />
             <div className={`rounded-lg border p-4 ${risk ? riskClass(risk.level) : "border-zinc-800 bg-zinc-900/80"}`}>
-              <div className="text-[11px] tracking-[0.16em] opacity-80">MARKET RISK</div>
+              <div className="text-[11px] tracking-[0.16em] opacity-80">市場リスク</div>
               <div className="mt-1 font-mono text-xl">
                 {risk ? `${risk.score} / 100` : "—"}
               </div>
-              <div className="mt-1 text-xs">{risk?.level ?? ""} · 警告のみ</div>
+              <div className="mt-1 text-xs">{risk ? riskJa(risk.level) : ""} · 警告のみ（自動停止なし）</div>
             </div>
             <StatusCard
               label="UPDATED"
@@ -459,12 +467,12 @@ export function Dashboard() {
           ) : null}
 
           <section className="grid gap-4 lg:grid-cols-2">
-            <RankList title="TOP ENTRY LONG" rows={longs} accent="emerald" onSelect={setSelected} />
-            <RankList title="TOP ENTRY SHORT" rows={shorts} accent="rose" onSelect={setSelected} />
+            <RankList title="買い候補 TOP" rows={longs} accent="emerald" onSelect={setSelected} />
+            <RankList title="売り候補 TOP" rows={shorts} accent="rose" onSelect={setSelected} />
           </section>
           <section className="grid gap-4 lg:grid-cols-2">
-            <RankList title="TOP BULLISH REVERSAL" rows={bullRev} accent="emerald" onSelect={setSelected} score="revBull" />
-            <RankList title="TOP BEARISH REVERSAL" rows={bearRev} accent="rose" onSelect={setSelected} score="revBear" />
+            <RankList title="反転↑（売り持ち注意）" rows={bullRev} accent="emerald" onSelect={setSelected} score="revBull" />
+            <RankList title="反転↓（買い持ち注意）" rows={bearRev} accent="rose" onSelect={setSelected} score="revBear" />
           </section>
 
           <TradeDesk
@@ -491,7 +499,7 @@ export function Dashboard() {
                   filter === key ? "bg-zinc-100 text-zinc-950" : "border border-zinc-700 text-zinc-400"
                 }`}
               >
-                {key === "all" ? "ALL" : key === "long" ? "LONG候補" : key === "short" ? "SHORT候補" : "DATA ERROR"}
+                {key === "all" ? "全部" : key === "long" ? "買い候補" : key === "short" ? "売り候補" : "データエラー"}
               </button>
             ))}
           </section>
@@ -500,27 +508,28 @@ export function Dashboard() {
             <table className="min-w-[1200px] w-full text-left text-xs">
               <thead className="bg-zinc-900 text-[11px] uppercase tracking-wide text-zinc-500">
                 <tr>
-                  <Th label="Rank" onClick={() => toggleSort("rankLong")} />
-                  <Th label="Symbol" onClick={() => toggleSort("symbol")} />
-                  <th className="px-2 py-2 font-medium">Type</th>
-                  <Th label="Price" onClick={() => toggleSort("price")} />
+                  <Th label="順位" onClick={() => toggleSort("rankLong")} />
+                  <Th label="銘柄" onClick={() => toggleSort("symbol")} />
+                  <th className="px-2 py-2 font-medium">種類</th>
+                  <Th label="価格" onClick={() => toggleSort("price")} />
                   <Th label="24h" onClick={() => toggleSort("change")} />
-                  <Th label="LONG" onClick={() => toggleSort("long")} />
-                  <Th label="SHORT" onClick={() => toggleSort("short")} />
-                  <Th label="Diff" onClick={() => toggleSort("diff")} />
-                  <Th label="4H" onClick={() => toggleSort("trend4h")} />
-                  <th className="px-2 py-2 font-medium">1H</th>
-                  <th className="px-2 py-2 font-medium">15M</th>
+                  <Th label="買い点" onClick={() => toggleSort("long")} />
+                  <Th label="売り点" onClick={() => toggleSort("short")} />
+                  <Th label="差" onClick={() => toggleSort("diff")} />
+                  <Th label="4時間" onClick={() => toggleSort("trend4h")} />
+                  <th className="px-2 py-2 font-medium">1時間</th>
+                  <th className="px-2 py-2 font-medium">15分</th>
                   <Th label="RSI4H" onClick={() => toggleSort("rsi4h")} />
                   <th className="px-2 py-2 font-medium">RSI1H</th>
                   <th className="px-2 py-2 font-medium">RSI15</th>
                   <th className="px-2 py-2 font-medium">MACD</th>
                   <Th label="ADX" onClick={() => toggleSort("adx")} />
                   <th className="px-2 py-2 font-medium">Vol</th>
-                  <Th label="BTC corr" onClick={() => toggleSort("corr")} />
-                  <Th label="Signal" onClick={() => toggleSort("signal")} />
-                  <th className="px-2 py-2 font-medium">Reversal</th>
-                  <th className="px-2 py-2 font-medium">Updated</th>
+                  <Th label="BTC連動" onClick={() => toggleSort("corr")} />
+                  <Th label="判定" onClick={() => toggleSort("signal")} />
+                  <th className="px-2 py-2 font-medium">反転</th>
+                  <th className="px-2 py-2 font-medium">だからこうした方がいい</th>
+                  <th className="px-2 py-2 font-medium">更新</th>
                 </tr>
               </thead>
               <tbody>
@@ -549,13 +558,13 @@ export function Dashboard() {
                       <td className="px-2 py-2 font-mono text-emerald-300">{row.long?.total ?? "—"}</td>
                       <td className="px-2 py-2 font-mono text-rose-300">{row.short?.total ?? "—"}</td>
                       <td className="px-2 py-2 font-mono">{row.difference ?? "—"}</td>
-                      <td className="px-2 py-2">{row.indicators["4h"]?.trend ?? "—"}</td>
-                      <td className="px-2 py-2">{row.indicators["1h"]?.trend ?? "—"}</td>
-                      <td className="px-2 py-2">{row.indicators["15m"]?.trend ?? "—"}</td>
+                      <td className="px-2 py-2">{trendJa(row.indicators["4h"]?.trend)}</td>
+                      <td className="px-2 py-2">{trendJa(row.indicators["1h"]?.trend)}</td>
+                      <td className="px-2 py-2">{trendJa(row.indicators["15m"]?.trend)}</td>
                       <td className="px-2 py-2 font-mono">{formatNum(row.indicators["4h"]?.rsi, 1)}</td>
                       <td className="px-2 py-2 font-mono">{formatNum(row.indicators["1h"]?.rsi, 1)}</td>
                       <td className="px-2 py-2 font-mono">{formatNum(row.indicators["15m"]?.rsi, 1)}</td>
-                      <td className="px-2 py-2">{row.indicators["1h"]?.macdBias ?? "—"}</td>
+                      <td className="px-2 py-2">{macdJa(row.indicators["1h"]?.macdBias)}</td>
                       <td className="px-2 py-2 font-mono">{formatNum(row.indicators["4h"]?.adx, 1)}</td>
                       <td className="px-2 py-2 font-mono">{formatNum(row.indicators["15m"]?.volumeRatio, 2)}</td>
                       <td className={`px-2 py-2 font-mono ${highCorr ? "text-amber-300" : ""}`}>
@@ -564,11 +573,14 @@ export function Dashboard() {
                       </td>
                       <td className="px-2 py-2">
                         <span className={`rounded border px-1.5 py-0.5 text-[10px] ${signalClass(row.signal)}`}>
-                          {row.signal}
+                          {adviceFor(row).tag}
                         </span>
                       </td>
-                      <td className="px-2 py-2 text-[10px] text-zinc-400">
-                        {row.reversal?.signal ?? "—"}
+                      <td className="px-2 py-2 text-[10px] text-zinc-300">
+                        {reversalJa(row.reversal?.signal)}
+                      </td>
+                      <td className="max-w-[220px] px-2 py-2 text-[11px] text-zinc-300">
+                        {adviceFor(row).action}
                       </td>
                       <td className="px-2 py-2 text-zinc-500" suppressHydrationWarning>
                         {new Date(row.updatedAt).toLocaleTimeString()}
@@ -643,22 +655,26 @@ function RankList({
                     ? row.long?.total
                     : row.short?.total;
             const badge =
-              score === "entry" ? row.signal : row.reversal?.signal ?? row.signal;
+              score === "entry" ? signalJa(row.signal) : reversalJa(row.reversal?.signal);
+            const tip = adviceFor(row);
             return (
             <button
               key={row.symbol}
               type="button"
               onClick={() => onSelect(row)}
-              className="flex w-full items-center justify-between rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-left hover:border-zinc-600"
+              className="flex w-full flex-col gap-1 rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-left hover:border-zinc-600"
             >
-              <span className="flex items-center gap-3">
-                <span className="w-5 font-mono text-xs text-zinc-500">{index + 1}</span>
-                <span className="font-mono text-sm">{row.display}</span>
-                <span className={`rounded border px-1.5 py-0.5 text-[10px] ${signalClass(badge)}`}>
-                  {badge}
+              <span className="flex w-full items-center justify-between">
+                <span className="flex items-center gap-3">
+                  <span className="w-5 font-mono text-xs text-zinc-500">{index + 1}</span>
+                  <span className="font-mono text-sm">{row.display}</span>
+                  <span className={`rounded border px-1.5 py-0.5 text-[10px] ${signalClass(row.signal)}`}>
+                    {badge}
+                  </span>
                 </span>
+                <span className={`font-mono text-sm ${color}`}>{value}</span>
               </span>
-              <span className={`font-mono text-sm ${color}`}>{value}</span>
+              <span className="pl-8 text-[11px] leading-4 text-zinc-400">{tip.action}</span>
             </button>
             );
           })

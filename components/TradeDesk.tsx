@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { scoreExitAlert } from "@/lib/scoring/exit-alert";
 import { computePositionMetrics } from "@/lib/scoring/pnl";
 import { computePortfolioRisk } from "@/lib/scoring/portfolio";
-import { formatNum, formatPct, formatPrice, riskClass } from "@/components/format";
+import { formatPct, formatPrice, riskClass } from "@/components/format";
+import { alertTypeJa, exitLevelJa, flagJa, reversalJa, sideJa, trendJa } from "@/lib/copy/ja";
 import type { AppAlert, ManualPosition } from "@/lib/types/alerts";
 import type { PerpetualContract } from "@/lib/types/market";
 import type { MarketEnvSnapshot, MarketRisk, SymbolAnalysis } from "@/lib/types/scoring";
@@ -118,7 +119,7 @@ export function TradeDesk({
           type: "ENTRY",
           score: row.long?.total ?? 0,
           intensity: intensityFromScore(row.long?.total ?? 0, "ENTRY"),
-          title: "STRONG LONG CANDIDATE",
+          title: "買い 強め（検討）",
           reasons: row.long?.items.slice(0, 4).map((i) => i.reason) ?? [],
         });
       }
@@ -129,7 +130,7 @@ export function TradeDesk({
           type: "ENTRY",
           score: row.short?.total ?? 0,
           intensity: intensityFromScore(row.short?.total ?? 0, "ENTRY"),
-          title: "STRONG SHORT CANDIDATE",
+          title: "売り 強め（検討）",
           reasons: row.short?.items.slice(0, 4).map((i) => i.reason) ?? [],
         });
       }
@@ -140,7 +141,7 @@ export function TradeDesk({
           type: "REVERSAL",
           score: row.reversal.bullish,
           intensity: intensityFromScore(row.reversal.bullish, "REVERSAL"),
-          title: "STRONG REVERSAL DETECTED",
+          title: "反転↑（売りの人は注意）",
           reasons: row.reversal.reasons,
         });
       }
@@ -151,7 +152,7 @@ export function TradeDesk({
           type: "REVERSAL",
           score: row.futures?.score ?? 0,
           intensity: flag.includes("EXPLOSION") || flag.includes("LIQUIDATION") ? "HIGH" : "WARNING",
-          title: flag,
+          title: flagJa(flag),
           reasons: [row.futures?.narrativeJa ?? ""],
         });
       }
@@ -162,7 +163,7 @@ export function TradeDesk({
           type: "REVERSAL",
           score: row.reversal.bearish,
           intensity: intensityFromScore(row.reversal.bearish, "REVERSAL"),
-          title: "STRONG REVERSAL DETECTED",
+          title: "反転↓（買いの人は注意）",
           reasons: row.reversal.reasons,
         });
       }
@@ -170,7 +171,7 @@ export function TradeDesk({
 
     for (const item of evaluated) {
       if (!item.exit || item.exit.score < 70) continue;
-      const title = item.pos.side === "LONG" ? "LONG EXIT RISK HIGH" : "SHORT EXIT RISK HIGH";
+      const title = item.pos.side === "LONG" ? "買いポジ 決済を検討" : "売りポジ 決済を検討";
       push({
         symbol: item.pos.symbol,
         display: item.row?.display ?? item.pos.symbol,
@@ -222,7 +223,7 @@ export function TradeDesk({
 
       <section className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold tracking-wide text-zinc-200">MY POSITIONS</h2>
+          <h2 className="text-sm font-semibold tracking-wide text-zinc-200">自分のポジション</h2>
           <button
             type="button"
             onClick={() => {
@@ -248,8 +249,8 @@ export function TradeDesk({
             onChange={(e) => setForm((f) => ({ ...f, side: e.target.value as "LONG" | "SHORT" }))}
             className="h-9 rounded-md border border-zinc-700 bg-zinc-950 px-2 text-xs"
           >
-            <option value="LONG">LONG</option>
-            <option value="SHORT">SHORT</option>
+            <option value="LONG">買い</option>
+            <option value="SHORT">売り</option>
           </select>
           <input
             value={form.entry}
@@ -280,7 +281,7 @@ export function TradeDesk({
 
         {portfolio.total ? (
           <div className={`mt-3 rounded-md border px-3 py-2 text-xs ${riskClass(portfolio.level)}`}>
-            LONG {portfolio.longCount} / SHORT {portfolio.shortCount} · EXIT HIGH以上 {portfolio.highExitCount}/
+            買い {portfolio.longCount} / 売り {portfolio.shortCount} · 決済危険 {portfolio.highExitCount}/
             {portfolio.total} · {portfolio.message}
           </div>
         ) : null}
@@ -289,7 +290,7 @@ export function TradeDesk({
           <table className="min-w-[900px] w-full text-left text-xs">
             <thead className="text-[11px] uppercase text-zinc-500">
               <tr>
-                {["Symbol", "Side", "Entry", "Current", "Price %", "Margin PnL", "Trend", "Reversal", "Exit", ""].map(
+                {["銘柄", "向き", "建値", "現値", "価格%", "証拠金損益", "トレンド", "反転", "決済危険", ""].map(
                   (h) => (
                     <th key={h} className="py-1 pr-3 font-medium">
                       {h}
@@ -309,15 +310,15 @@ export function TradeDesk({
                 evaluated.map((item) => (
                   <tr key={item.pos.id} className="border-t border-zinc-800">
                     <td className="py-2 font-mono">{item.row?.display ?? item.pos.symbol}</td>
-                    <td>{item.pos.side}</td>
+                    <td>{sideJa(item.pos.side)}</td>
                     <td className="font-mono">{formatPrice(item.pos.entry)}</td>
                     <td className="font-mono">{formatPrice(item.current)}</td>
                     <td className="font-mono">{formatPct(item.metrics.priceChangePct)}</td>
                     <td className="font-mono">{formatPct(item.metrics.marginPnlPct)}</td>
-                    <td>{item.row?.indicators["4h"]?.trend ?? "—"}</td>
-                    <td>{item.row?.reversal?.signal ?? "—"}</td>
+                    <td>{trendJa(item.row?.indicators["4h"]?.trend)}</td>
+                    <td>{reversalJa(item.row?.reversal?.signal)}</td>
                     <td className="font-mono">
-                      {item.exit ? `${item.exit.score} ${item.exit.level}` : "—"}
+                      {item.exit ? `${item.exit.score} ${exitLevelJa(item.exit.level)}` : "—"}
                     </td>
                     <td>
                       <button
@@ -340,8 +341,8 @@ export function TradeDesk({
           return (
             <div key={`${item.pos.id}-note`} className="mt-2 rounded-md border border-zinc-800 px-3 py-2 text-xs text-zinc-300">
               {profit
-                ? `PROFIT ${formatPct(item.metrics.priceChangePct)} · ${item.exit.headline} · 利益確定・縮小を検討（自動決済なし）`
-                : `LOSS ${formatPct(item.metrics.priceChangePct)} · 価格変動と証拠金PnL ${formatPct(item.metrics.marginPnlPct)} は別です。10%価格ストップまで ${item.metrics.priceStopHit ? "到達" : "未到達"}。`}
+                ? `利益 ${formatPct(item.metrics.priceChangePct)} · ${item.exit.headline} · 利益確定・縮小を検討（自動決済なし）`
+                : `損失 ${formatPct(item.metrics.priceChangePct)} · 価格変動と証拠金損益 ${formatPct(item.metrics.marginPnlPct)} は別です。10%価格ストップまで ${item.metrics.priceStopHit ? "到達" : "未到達"}。`}
               <div className="mt-1 text-zinc-500">{item.exit.reasons.slice(0, 6).join(" / ")}</div>
             </div>
           );
@@ -349,7 +350,7 @@ export function TradeDesk({
       </section>
 
       <section className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4">
-        <h2 className="text-sm font-semibold tracking-wide text-zinc-200">EXIT RISK RANK</h2>
+        <h2 className="text-sm font-semibold tracking-wide text-zinc-200">決済危険ランク</h2>
         <div className="mt-3 space-y-2">
           {exitRanked.length === 0 ? (
             <p className="text-xs text-zinc-500">保有を追加すると危険度順に並びます。</p>
@@ -365,7 +366,7 @@ export function TradeDesk({
                   {index + 1}. {item.row?.display ?? item.pos.symbol}
                 </span>
                 <span className="font-mono text-xs">
-                  {item.exit?.score ?? "—"} {item.exit?.level}
+                  {item.exit?.score ?? "—"} {exitLevelJa(item.exit?.level)}
                 </span>
               </button>
             ))
@@ -374,12 +375,12 @@ export function TradeDesk({
       </section>
 
       <section className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4">
-        <h2 className="text-sm font-semibold tracking-wide text-zinc-200">ALERT CENTER</h2>
+        <h2 className="text-sm font-semibold tracking-wide text-zinc-200">お知らせ</h2>
         <div className="mt-3 overflow-x-auto">
           <table className="min-w-[700px] w-full text-left text-xs">
             <thead className="text-[11px] uppercase text-zinc-500">
               <tr>
-                {["Time", "Symbol", "Type", "Score", "Reason"].map((h) => (
+                {["時刻", "銘柄", "種類", "点", "内容"].map((h) => (
                   <th key={h} className="py-1 pr-3 font-medium">
                     {h}
                   </th>
@@ -390,7 +391,7 @@ export function TradeDesk({
               {alerts.length === 0 ? (
                 <tr>
                   <td className="py-3 text-zinc-500" colSpan={5}>
-                    分析後、ENTRY / REVERSAL / EXIT が条件を満たすとここに出ます。同一銘柄は12分間重複通知しません。
+                    分析後、買い・売り・反転・決済検討の条件を満たすとここに出ます。同一銘柄は12分間重複通知しません。
                   </td>
                 </tr>
               ) : (
@@ -398,7 +399,7 @@ export function TradeDesk({
                   <tr key={alert.id} className="border-t border-zinc-800">
                     <td className="py-2 text-zinc-500">{new Date(alert.time).toLocaleTimeString()}</td>
                     <td className="font-mono">{alert.display}</td>
-                    <td>{alert.type}</td>
+                    <td>{alertTypeJa(alert.type)}</td>
                     <td className="font-mono">{alert.score}</td>
                     <td className="text-zinc-400">{alert.title} · {alert.reasons[0] ?? ""}</td>
                   </tr>
