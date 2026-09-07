@@ -6,6 +6,7 @@ import { computeMarketRisk } from "@/lib/scoring/market-risk";
 import { applyRanks, topLong, topReversal, topShort, topTiming } from "@/lib/scoring/ranking";
 import { DATA_SOURCE_NOTES, DISCLAIMER } from "@/lib/analysis/notes";
 import { listedWithoutPublicPerp, NO_PUBLIC_PERP, DECISION_EMPTY } from "@/lib/analysis/listed-only";
+import { readApiJson } from "@/lib/client/api-json";
 import type { TickerSnapshot, PerpetualContract } from "@/lib/types/market";
 import type { CandleVenue } from "@/lib/types/venue";
 import type {
@@ -166,7 +167,7 @@ export function Dashboard() {
     setProgress({ done: 0, total: 1 });
     try {
       const response = await fetch("/api/phase13", { method: "POST" });
-      const json = (await response.json()) as {
+      const json = await readApiJson<{
         error?: string;
         market?: MarketEnvSnapshot;
         focus?: SymbolAnalysis;
@@ -176,7 +177,7 @@ export function Dashboard() {
           warning: string | null;
           error: string | null;
         };
-      };
+      }>(response, "POST /api/phase13");
       if (!response.ok) throw new Error(json.error || "Phase 1-3 の取得に失敗しました");
       if (json.market) setMarket(json.market);
       if (json.focus) {
@@ -216,8 +217,14 @@ export function Dashboard() {
         fetch("/api/universe"),
         fetch("/api/market-env"),
       ]);
-      const universe = (await universeRes.json()) as UniverseResponse & { error?: string };
-      const env = (await envRes.json()) as MarketEnvSnapshot & { error?: string };
+      const universe = await readApiJson<UniverseResponse & { error?: string }>(
+        universeRes,
+        "GET /api/universe",
+      );
+      const env = await readApiJson<MarketEnvSnapshot & { error?: string }>(
+        envRes,
+        "GET /api/market-env",
+      );
       if (!universeRes.ok) throw new Error(universe.error || "銘柄一覧の取得に失敗しました");
       if (!envRes.ok) throw new Error(env.error || "市場環境の取得に失敗しました");
       setMarket(env);
@@ -258,7 +265,10 @@ export function Dashboard() {
             venues: universe.venues,
           }),
         });
-        const json = (await response.json()) as { results?: SymbolAnalysis[]; error?: string };
+        const json = await readApiJson<{ results?: SymbolAnalysis[]; error?: string }>(
+          response,
+          "POST /api/analyze-batch",
+        );
         if (!response.ok) {
           for (const symbol of batch) {
             collected.push({

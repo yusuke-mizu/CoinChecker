@@ -12,6 +12,7 @@ import {
 } from "lightweight-charts";
 import type { CoreTimeframe } from "@/lib/types/market";
 import type { OhlcvPayload } from "@/components/format";
+import { readApiJson } from "@/lib/client/api-json";
 
 const TFS: CoreTimeframe[] = ["4h", "1h", "15m"];
 
@@ -67,11 +68,15 @@ export function CandleChart({
 
     let cancelled = false;
     async function load() {
-      const response = await fetch(
-        `/api/ohlcv?symbol=${encodeURIComponent(symbol)}&tf=${encodeURIComponent(timeframe)}`,
-      );
-      const json = (await response.json()) as OhlcvPayload & { error?: string };
-      if (!response.ok || cancelled) return;
+      try {
+        const response = await fetch(
+          `/api/ohlcv?symbol=${encodeURIComponent(symbol)}&tf=${encodeURIComponent(timeframe)}`,
+        );
+        const json = await readApiJson<OhlcvPayload & { error?: string }>(
+          response,
+          "GET /api/ohlcv",
+        );
+        if (!response.ok || cancelled) return;
       candles.setData(
         json.candles.map((c) => ({
           time: Math.floor(c.openTime / 1000) as UTCTimestamp,
@@ -98,7 +103,12 @@ export function CandleChart({
           color: c.close >= c.open ? "rgba(52, 211, 153, 0.35)" : "rgba(251, 113, 133, 0.35)",
         })),
       );
-      chart.timeScale().fitContent();
+        chart.timeScale().fitContent();
+      } catch (error) {
+        if (!cancelled) {
+          console.error(error instanceof Error ? error.message : error);
+        }
+      }
     }
 
     void load();

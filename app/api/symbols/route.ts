@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadUniverse, toUsdtSymbol } from "@/lib/analysis/universe";
+import { apiError } from "@/lib/api/json-error";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -15,9 +16,6 @@ export async function GET() {
       source: universe.source,
     });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Symbols failed" },
-      { status: 500 },
-    );
+    return apiError(error, "Symbols failed");
   }
 }

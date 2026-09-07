@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadUniverse } from "@/lib/analysis/universe";
+import { apiError } from "@/lib/api/json-error";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -9,9 +10,6 @@ export async function GET() {
     const universe = await loadUniverse();
     return NextResponse.json(universe);
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Universe failed" },
-      { status: 500 },
-    );
+    return apiError(error, "Universe failed");
   }
 }

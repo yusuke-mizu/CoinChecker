@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { analyzeSymbol } from "@/lib/analysis/analyze-symbol";
 import { DATA_SOURCE_NOTES, DISCLAIMER } from "@/lib/analysis/notes";
 import { loadMarketEnv } from "@/lib/analysis/market-env";
+import { apiError } from "@/lib/api/json-error";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -31,11 +32,6 @@ export async function POST(request: Request) {
       focus,
     });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Analyze failed",
-      },
-      { status: 500 },
-    );
+    return apiError(error, "Analyze failed");
   }
 }
