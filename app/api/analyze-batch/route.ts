@@ -62,6 +62,9 @@ export async function POST(request: Request) {
           btcCorrelation: null,
           rankLong: null,
           rankShort: null,
+          reversal: null,
+          futures: null,
+          contract: null,
         };
       }
     });

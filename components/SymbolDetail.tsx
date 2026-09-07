@@ -46,8 +46,15 @@ export function SymbolDetail({
             </span>
             <span className="text-sm text-zinc-400">
               LONG {row.long?.total ?? "—"} / SHORT {row.short?.total ?? "—"} · Diff {row.difference ?? "—"}
+              · {row.reversal?.signal ?? "NO REVERSAL"} ({row.reversal?.bullish ?? "—"}/{row.reversal?.bearish ?? "—"})
             </span>
           </div>
+          {row.contract ? (
+            <p className="text-xs text-zinc-500">
+              {row.contract.contractType} · margin {row.contract.marginAsset} · {row.contract.settlement}
+              {row.contract.maxLeverage != null ? ` · max ${row.contract.maxLeverage}x` : ""}
+            </p>
+          ) : null}
 
           <div className="grid gap-3 sm:grid-cols-2">
             <ScorePanel title="LONG SCORE" score={row.long} accent="emerald" />
@@ -64,6 +71,39 @@ export function SymbolDetail({
             <section>
               <h3 className="text-sm font-semibold text-zinc-200">スコア内訳（SHORT）</h3>
               <Breakdown items={row.short.items} total={row.short.total} />
+              {row.short.renormalized ? (
+                <p className="mt-1 text-[11px] text-zinc-500">OI/Funding欠落のためエントリー内訳を再正規化しています。</p>
+              ) : null}
+            </section>
+          ) : null}
+
+          {row.futures ? (
+            <section className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3 text-xs">
+              <h3 className="text-sm font-semibold text-zinc-200">Futures Positioning</h3>
+              <p className="mt-1 font-mono text-lg text-zinc-100">{row.futures.structure}</p>
+              <p className="mt-1 text-zinc-400">{row.futures.narrativeJa}</p>
+              <div className="mt-2 grid grid-cols-2 gap-2 font-mono">
+                <div>Price 1H {formatPct(row.futures.priceChange1hPct)}</div>
+                <div>OI 15m {formatPct(row.futures.oiChange15mPct)}</div>
+                <div>OI 1H {formatPct(row.futures.oiChange1hPct)}</div>
+                <div>OI 4H {formatPct(row.futures.oiChange4hPct)}</div>
+                <div>
+                  Funding{" "}
+                  {row.futures.fundingRate == null ? "unavailable" : `${(row.futures.fundingRate * 100).toFixed(4)}%`}
+                </div>
+                <div>Fund %ile {formatNum(row.futures.fundingPercentile, 0)}</div>
+                <div>OI %ile {formatNum(row.futures.oiPercentile, 0)}</div>
+                <div>OI band {row.futures.oiBand}</div>
+                <div>Score {row.futures.score}/100</div>
+                <div>
+                  {row.futures.availableOi ? "OI ok" : "OI unavailable"} ·{" "}
+                  {row.futures.availableFunding ? "Funding ok" : "Funding unavailable"}
+                </div>
+              </div>
+              <p className="mt-2 text-zinc-500">
+                OI mom {row.futures.oiMomentum}/25 · Fund {row.futures.fundingBias}/25 · Price/OI {row.futures.priceOi}/25 ·
+                Liq {row.futures.liquidation}/25
+              </p>
             </section>
           ) : null}
 

@@ -1,6 +1,6 @@
 import { fetchJson, HttpError } from "@/lib/market-data/http";
-import { toCompactUsdt } from "@/lib/market-data/provider";
-import type { Candle, CoreTimeframe, TickerSnapshot } from "@/lib/types/market";
+import { toCompactUsdt, toDisplaySymbol } from "@/lib/market-data/provider";
+import type { Candle, CoreTimeframe, PerpetualContract, TickerSnapshot } from "@/lib/types/market";
 
 type OkxResponse<T> = {
   code: string;
@@ -35,7 +35,7 @@ const BAR: Record<CoreTimeframe | "5m", string> = {
   "4h": "4H",
 };
 
-function toSwapInstId(symbol: string): string {
+export function toSwapInstId(symbol: string): string {
   const compact = toCompactUsdt(symbol);
   if (!compact.endsWith("USDT")) {
     throw new Error(`Not a USDT symbol: ${symbol}`);
@@ -142,7 +142,12 @@ export async function fetchOkxTicker(symbol: string): Promise<TickerSnapshot> {
 
 type OkxInstrument = {
   instId?: string;
+  instType?: string;
   state?: string;
+  settleCcy?: string;
+  ctType?: string;
+  lever?: string;
+  uly?: string;
 };
 
 type OkxTickerRow = OkxTicker & {
@@ -155,8 +160,8 @@ export function compactFromOkxSwapInstId(instId: string): string | null {
   return `${instId.slice(0, -suffix.length)}USDT`;
 }
 
-/** Live USDT perpetual swap names on OKX, as compact BTCUSDT keys. */
-export async function fetchOkxUsdtSwapSymbols(): Promise<Set<string>> {
+/** Live USDT-margined linear perpetual swaps (not spot, not coin-m, not delivery). */
+export async function fetchOkxUsdtMPerpetuals(): Promise<Record<string, PerpetualContract>> {
   const url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP";
   const json = await fetchJson<OkxResponse<OkxInstrument[]>>(url, {
     timeoutMs: 20_000,
@@ -165,13 +170,145 @@ export async function fetchOkxUsdtSwapSymbols(): Promise<Set<string>> {
   if (json.code !== "0") {
     throw new HttpError(`OKX instruments failed: ${json.msg || json.code}`, undefined, "HTTP");
   }
-  const out = new Set<string>();
+  const out: Record<string, PerpetualContract> = {};
   for (const row of json.data ?? []) {
     if (row.state && row.state !== "live") continue;
+    if ((row.settleCcy ?? "").toUpperCase() !== "USDT") continue;
+    if (row.ctType && row.ctType !== "linear") continue;
     const compact = compactFromOkxSwapInstId(row.instId ?? "");
-    if (compact) out.add(compact);
+    if (!compact) continue;
+    const lever = row.lever != null && row.lever !== "" ? Number(row.lever) : null;
+    out[compact] = {
+      symbol: compact,
+      display: toDisplaySymbol(compact),
+      contractType: "USDT-M Perpetual",
+      quoteAsset: "USDT",
+      marginAsset: "USDT",
+      settlement: "Perpetual",
+      maxLeverage: Number.isFinite(lever) ? lever : null,
+      instId: row.instId ?? `${compact.slice(0, -4)}-USDT-SWAP`,
+    };
   }
   return out;
+}
+
+export async function fetchOkxUsdtSwapSymbols(): Promise<Set<string>> {
+  return new Set(Object.keys(await fetchOkxUsdtMPerpetuals()));
+}
+
+export async function fetchOkxOpenInterest(): Promise<Record<string, number>> {
+  const url = "https://www.okx.com/api/v5/public/open-interest?instType=SWAP";
+  const json = await fetchJson<OkxResponse<Array<{ instId?: string; oi?: string }>>>(url, {
+    timeoutMs: 20_000,
+    retries: 2,
+  });
+  if (json.code !== "0") {
+    throw new HttpError(`OKX open interest failed: ${json.msg || json.code}`, undefined, "HTTP");
+  }
+  const out: Record<string, number> = {};
+  for (const row of json.data ?? []) {
+    const compact = compactFromOkxSwapInstId(row.instId ?? "");
+    const oi = Number(row.oi);
+    if (compact && Number.isFinite(oi)) out[compact] = oi;
+  }
+  return out;
+}
+
+type OiHistRow = {
+  ts?: string;
+  oi?: string;
+  oiUsd?: string;
+};
+
+function parseOiHistoryPayload(data: unknown): Array<{ ts: number; oi: number; oiUsd: number | null }> {
+  if (!Array.isArray(data)) return [];
+  const out: Array<{ ts: number; oi: number; oiUsd: number | null }> = [];
+  for (const row of data) {
+    if (Array.isArray(row)) {
+      const ts = Number(row[0]);
+      const oi = Number(row[1]);
+      const oiUsd = row[3] != null ? Number(row[3]) : null;
+      if (Number.isFinite(ts) && Number.isFinite(oi)) {
+        out.push({ ts, oi, oiUsd: Number.isFinite(oiUsd) ? oiUsd : null });
+      }
+      continue;
+    }
+    const rec = row as OiHistRow;
+    const ts = Number(rec.ts);
+    const oi = Number(rec.oi);
+    const oiUsd = rec.oiUsd != null ? Number(rec.oiUsd) : null;
+    if (Number.isFinite(ts) && Number.isFinite(oi)) {
+      out.push({ ts, oi, oiUsd: Number.isFinite(oiUsd) ? oiUsd : null });
+    }
+  }
+  return out.sort((a, b) => a.ts - b.ts);
+}
+
+/** Docs: GET /api/v5/rubik/stat/contracts/open-interest-history (5m/1H/1D). */
+export async function fetchOkxOiHistory5m(symbol: string, limit = 100) {
+  const instId = toSwapInstId(symbol);
+  const capped = Math.min(Math.max(limit, 5), 100);
+  const urls = [
+    `https://www.okx.com/api/v5/rubik/stat/contracts/open-interest-history?instId=${encodeURIComponent(instId)}&period=5m&limit=${capped}`,
+    `https://www.okx.com/api/v5/public/open-interest-history?instId=${encodeURIComponent(instId)}&period=5m&limit=${capped}`,
+  ];
+  let lastError: Error | null = null;
+  for (const url of urls) {
+    try {
+      const json = await fetchJson<OkxResponse<unknown>>(url, { timeoutMs: 12_000, retries: 1 });
+      if (json.code !== "0") {
+        lastError = new HttpError(json.msg || json.code, undefined, "HTTP");
+        continue;
+      }
+      const rows = parseOiHistoryPayload(json.data);
+      if (rows.length) return rows;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  if (lastError) throw lastError;
+  return [];
+}
+
+export type OkxFundingSnapshot = {
+  rate: number | null;
+  nextFundingTime: number | null;
+  history: number[];
+};
+
+export async function fetchOkxFunding(symbol: string): Promise<OkxFundingSnapshot> {
+  const instId = toSwapInstId(symbol);
+  const currentUrl = `https://www.okx.com/api/v5/public/funding-rate?instId=${encodeURIComponent(instId)}`;
+  const histUrl = `https://www.okx.com/api/v5/public/funding-rate-history?instId=${encodeURIComponent(instId)}&limit=100`;
+  const [curRes, histRes] = await Promise.allSettled([
+    fetchJson<OkxResponse<Array<{ fundingRate?: string; nextFundingTime?: string }>>>(currentUrl, {
+      timeoutMs: 10_000,
+      retries: 1,
+    }),
+    fetchJson<OkxResponse<Array<{ fundingRate?: string }>>>(histUrl, {
+      timeoutMs: 10_000,
+      retries: 1,
+    }),
+  ]);
+  let rate: number | null = null;
+  let nextFundingTime: number | null = null;
+  if (curRes.status === "fulfilled" && curRes.value.code === "0") {
+    const row = curRes.value.data?.[0];
+    rate = parseNumber(row?.fundingRate);
+    const nxt = Number(row?.nextFundingTime);
+    nextFundingTime = Number.isFinite(nxt) ? nxt : null;
+  }
+  const history: number[] = [];
+  if (histRes.status === "fulfilled" && histRes.value.code === "0") {
+    for (const row of histRes.value.data ?? []) {
+      const v = parseNumber(row.fundingRate);
+      if (v != null) history.push(v);
+    }
+  }
+  if (rate == null && history.length === 0) {
+    throw new HttpError(`Funding unavailable for ${instId}`, undefined, "HTTP");
+  }
+  return { rate, nextFundingTime, history };
 }
 
 /** All SWAP tickers in one request; keys are compact USDT symbols. */

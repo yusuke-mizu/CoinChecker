@@ -24,11 +24,11 @@ function btcMarketPoints(input: MarketEnvInput, direction: "long" | "short") {
     parts.push("BTC 4H data unavailable");
   } else {
     const map: Record<string, number> = {
-      "Strong Bullish": 10,
-      Bullish: 6,
+      "Strong Bullish": 8,
+      Bullish: 5,
       Range: 0,
-      Bearish: -6,
-      "Strong Bearish": -10,
+      Bearish: -5,
+      "Strong Bearish": -8,
       Unknown: 0,
     };
     const raw = map[btc4h.trend] ?? 0;
@@ -69,7 +69,7 @@ function btcMarketPoints(input: MarketEnvInput, direction: "long" | "short") {
 
   parts.push("DXY / NASDAQ / 10Y / ETF are not fetched (no official free API wired).");
   return {
-    points: clamp(points, -15, 20),
+    points: clamp(10 + points, 0, 20),
     reason: parts.join(" / "),
   };
 }
@@ -191,7 +191,7 @@ function momentumScore(tf15: TimeframeIndicators | null, direction: "long" | "sh
       key: "momentum",
       label: "Momentum",
       points: 0,
-      max: 5,
+      max: 10,
       reason: "15M RSI/MACD unavailable",
     };
   }
@@ -201,88 +201,55 @@ function momentumScore(tf15: TimeframeIndicators | null, direction: "long" | "sh
   return {
     key: "momentum",
     label: "Momentum",
-    points: aligned ? 5 : 1,
-    max: 5,
+    points: aligned ? 10 : 3,
+    max: 10,
     reason: aligned
       ? `15M RSI ${tf15.rsi.toFixed(1)} and MACD ${tf15.macdBias} aligned`
       : `15M RSI ${tf15.rsi.toFixed(1)} / MACD ${tf15.macdBias} not aligned`,
   };
 }
 
-function timingScore(
-  tf15: TimeframeIndicators | null,
-  btc4h: TimeframeIndicators | null,
-  direction: "long" | "short",
-): ScoreBreakdownItem {
-  if (!tf15) {
-    return {
-      key: "timing",
-      label: "Entry timing",
-      points: 0,
-      max: 30,
-      reason: "15M data unavailable",
-    };
+function priceActionScore(tf: TimeframeIndicators | null, direction: "long" | "short"): ScoreBreakdownItem {
+  if (!tf) {
+    return { key: "price-action", label: "Price action", points: 0, max: 10, reason: "unavailable" };
   }
   let pts = 0;
   const notes: string[] = [];
-  const volStrong = (tf15.volumeRatio ?? 0) >= 1.2;
-  const breakout =
-    (direction === "long" && tf15.structure === "HH_HL" && volStrong) ||
-    (direction === "short" && tf15.structure === "LH_LL" && volStrong);
-  if (breakout) {
-    pts += 10;
-    notes.push("structure + volume");
-  }
-
-  const pullback =
-    (direction === "long" &&
-      tf15.ema20 != null &&
-      tf15.rsi != null &&
-      tf15.rsi >= 42 &&
-      tf15.rsi <= 55 &&
-      tf15.macdBias === "Bullish") ||
-    (direction === "short" &&
-      tf15.ema20 != null &&
-      tf15.rsi != null &&
-      tf15.rsi <= 58 &&
-      tf15.rsi >= 45 &&
-      tf15.macdBias === "Bearish");
-  if (pullback) {
-    pts += 8;
-    notes.push("pullback / bounce");
-  }
-
-  const structure =
-    (direction === "long" && tf15.structure === "HH_HL") ||
-    (direction === "short" && tf15.structure === "LH_LL");
-  if (structure) {
+  const want = direction === "long" ? "HH_HL" : "LH_LL";
+  if (tf.structure === want) {
     pts += 6;
-    notes.push(tf15.structure);
+    notes.push(tf.structure);
   }
-
-  const mom =
-    (direction === "long" && tf15.rsi != null && tf15.rsi >= 50 && tf15.macdBias === "Bullish") ||
-    (direction === "short" && tf15.rsi != null && tf15.rsi <= 50 && tf15.macdBias === "Bearish");
-  if (mom) {
-    pts += 3;
-    notes.push("RSI/MACD aligned");
+  const wick = direction === "long" ? tf.lowerWick : tf.upperWick;
+  if ((wick ?? 0) >= 0.4) {
+    pts += 4;
+    notes.push("rejection wick");
   }
-
-  if (btc4h) {
-    const btcLong = btc4h.trend === "Bullish" || btc4h.trend === "Strong Bullish";
-    const btcShort = btc4h.trend === "Bearish" || btc4h.trend === "Strong Bearish";
-    if ((direction === "long" && btcLong) || (direction === "short" && btcShort)) {
-      pts += 3;
-      notes.push("BTC same direction");
-    }
-  }
-
   return {
-    key: "timing",
-    label: "Entry timing",
-    points: clamp(pts, 0, 30),
-    max: 30,
-    reason: notes.length ? notes.join(" / ") : "No 15M timing match",
+    key: "price-action",
+    label: "Price action",
+    points: clamp(pts, 0, 10),
+    max: 10,
+    reason: notes.join(" / ") || "No structure edge",
+  };
+}
+
+function btcAlignScore(
+  btc4h: TimeframeIndicators | null,
+  direction: "long" | "short",
+): ScoreBreakdownItem {
+  if (!btc4h) {
+    return { key: "btc-align", label: "BTC alignment", points: 0, max: 5, reason: "BTC 4H unavailable" };
+  }
+  const bull = btc4h.trend === "Bullish" || btc4h.trend === "Strong Bullish";
+  const bear = btc4h.trend === "Bearish" || btc4h.trend === "Strong Bearish";
+  const hit = (direction === "long" && bull) || (direction === "short" && bear);
+  return {
+    key: "btc-align",
+    label: "BTC alignment",
+    points: hit ? 5 : 1,
+    max: 5,
+    reason: `BTC 4H ${btc4h.trend}`,
   };
 }
 
@@ -293,6 +260,7 @@ export function scoreDirection(
     tf4h: TimeframeIndicators | null;
     tf1h: TimeframeIndicators | null;
     tf15m: TimeframeIndicators | null;
+    futures?: import("@/lib/types/scoring").FuturesPositioning | null;
   },
 ) {
   const market = btcMarketPoints(input.market, direction);
@@ -301,47 +269,51 @@ export function scoreDirection(
   const t15 = trendScore(input.tf15m, direction, 5);
   const vol = volumeScore(input.tf15m ?? input.tf1h, direction);
   const mom = momentumScore(input.tf15m, direction);
-  const timing = timingScore(input.tf15m, input.market.btc4h, direction);
-
-  const tv: ScoreBreakdownItem = {
-    key: "tv",
-    label: "TradingView-style extras",
-    points: 0,
-    max: 5,
-    reason:
-      "TradingView has no public technical REST API; scraping is prohibited. Indicators are computed in-app.",
+  const pa = priceActionScore(input.tf1h ?? input.tf15m, direction);
+  const btc = btcAlignScore(input.market.btc4h, direction);
+  const pos = input.futures;
+  const futuresAvailable = Boolean(pos?.availableOi || pos?.availableFunding);
+  const futuresPts = direction === "long" ? (pos?.longPoints ?? 0) : (pos?.shortPoints ?? 0);
+  const futuresItem: ScoreBreakdownItem = {
+    key: "futures",
+    label: "Futures positioning",
+    points: futuresAvailable ? futuresPts : 0,
+    max: 20,
+    reason: futuresAvailable
+      ? direction === "long"
+        ? (pos?.longReason ?? "")
+        : (pos?.shortReason ?? "")
+      : "OI unavailable / Funding unavailable — this bucket excluded and other scores renormalized",
   };
 
   const marketItem: ScoreBreakdownItem = {
     key: "market",
     label: "Market environment",
     points: market.points,
-    max: 30,
+    max: 20,
     reason: market.reason,
   };
 
-  const items = [marketItem, t4, t1, t15, tv, vol, mom, timing];
-  const rawTotal =
-    marketItem.points +
-    t4.points +
-    t1.points +
-    t15.points +
-    tv.points +
-    vol.points +
-    mom.points +
-    timing.points;
-  const total = clamp(Math.round(rawTotal), 0, 100);
+  const items = [marketItem, t4, t1, t15, mom, vol, pa, btc, futuresItem];
+  const core =
+    marketItem.points + t4.points + t1.points + t15.points + mom.points + vol.points + pa.points + btc.points;
+  const rawTotal = core + (futuresAvailable ? futuresItem.points : 0);
+  const renormalized = !futuresAvailable;
+  const total = clamp(Math.round(renormalized ? (core / 80) * 100 : rawTotal), 0, 100);
 
   return {
     total,
+    renormalized,
     breakdown: {
       market: marketItem.points,
       trend4h: t4.points,
       trend1h: t1.points,
       trend15m: t15.points,
-      volume: vol.points,
       momentum: mom.points,
-      timing: timing.points,
+      volume: vol.points,
+      priceAction: pa.points,
+      btcAlign: btc.points,
+      futures: futuresAvailable ? futuresItem.points : 0,
     },
     items,
   };

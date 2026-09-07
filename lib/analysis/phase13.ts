@@ -77,6 +77,15 @@ export async function runPhase13(): Promise<Phase13Result> {
         btcCorrelation: 1,
         rankLong: null,
         rankShort: null,
+        reversal: null,
+        futures: null,
+        contract: {
+          contractType: "USDT-M Perpetual",
+          quoteAsset: "USDT",
+          marginAsset: "USDT",
+          settlement: "Perpetual",
+          maxLeverage: null,
+        },
       } satisfies SymbolAnalysis),
   };
 }

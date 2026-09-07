@@ -1,22 +1,26 @@
 import { fetchBtccUsdtSymbols } from "@/lib/exchanges/btcc";
 import {
+  fetchOkxOpenInterest,
   fetchOkxSwapTickers,
-  fetchOkxUsdtSwapSymbols,
+  fetchOkxUsdtMPerpetuals,
 } from "@/lib/market-data/okx";
 import { toDisplaySymbol } from "@/lib/market-data/provider";
 import { getTtlCache, setTtlCache } from "@/lib/util/ttl-cache";
-import type { TickerSnapshot, UsdtSymbol } from "@/lib/types/market";
+import type { PerpetualContract, TickerSnapshot, UsdtSymbol } from "@/lib/types/market";
 
-const CACHE_KEY = "universe-v1";
+const CACHE_KEY = "universe-usdtm-v1";
 const CACHE_MS = 5 * 60_000;
 const PRIORITY = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"];
 
 export type UniverseResult = {
   symbols: string[];
   tickers: Record<string, TickerSnapshot>;
+  contracts: Record<string, PerpetualContract>;
+  openInterest: Record<string, number>;
   btccCount: number;
   okxCount: number;
   skippedNoOkx: number;
+  skippedSpotOrNonPerp: number;
   source: string;
   warning: string | null;
   error: string | null;
@@ -41,27 +45,32 @@ export async function loadUniverse(force = false): Promise<UniverseResult> {
     if (cached) return cached;
   }
 
-  const [btccResult, okxSet, tickersResult] = await Promise.all([
+  const [btccResult, contracts, tickersResult, oiResult] = await Promise.all([
     fetchBtccUsdtSymbols()
       .then((symbols) => ({ symbols, error: null as string | null }))
       .catch((error) => ({
         symbols: [] as UsdtSymbol[],
         error: error instanceof Error ? error.message : String(error),
       })),
-    fetchOkxUsdtSwapSymbols(),
+    fetchOkxUsdtMPerpetuals(),
     fetchOkxSwapTickers()
       .then((tickers) => ({ tickers, error: null as string | null }))
       .catch((error) => ({
         tickers: {} as Record<string, TickerSnapshot>,
         error: error instanceof Error ? error.message : String(error),
       })),
+    fetchOkxOpenInterest()
+      .then((openInterest) => openInterest)
+      .catch(() => ({}) as Record<string, number>),
   ]);
 
+  const okxSet = new Set(Object.keys(contracts));
   const okxCount = okxSet.size;
   let warning: string | null = null;
-  let source = "coingecko-btcc ∩ okx-usdt-swap";
+  let source = "coingecko-btcc ∩ okx-usdt-m-linear-swap";
   let selected: string[] = [];
   let skippedNoOkx = 0;
+  const skippedSpotOrNonPerp = 0;
 
   if (btccResult.symbols.length > 0) {
     for (const row of btccResult.symbols) {
@@ -71,11 +80,13 @@ export async function loadUniverse(force = false): Promise<UniverseResult> {
         skippedNoOkx += 1;
       }
     }
+    warning =
+      "CoinGecko BTCC tickers do not reliably label Spot vs USDT-M Perpetual. Names that are not live OKX USDT-margined linear SWAP are excluded, so scoring uses perpetual OHLCV only. BTCC official futures listing still requires authenticated TradeOpenAPI.";
   } else {
     selected = [...okxSet];
-    source = "okx-usdt-swap-fallback";
+    source = "okx-usdt-m-linear-swap-fallback";
     warning =
-      "CoinGecko BTCC ticker list failed, so OKX USDT SWAP names are used as a fallback universe. This is not a BTCC listing.";
+      "CoinGecko BTCC ticker list failed, so OKX USDT-M linear SWAP names are used. This is not a BTCC listing.";
   }
 
   selected = sortUniverse(selected);
@@ -88,9 +99,12 @@ export async function loadUniverse(force = false): Promise<UniverseResult> {
   const result: UniverseResult = {
     symbols: selected,
     tickers,
+    contracts,
+    openInterest: oiResult,
     btccCount: btccResult.symbols.length,
     okxCount,
     skippedNoOkx,
+    skippedSpotOrNonPerp,
     source,
     warning,
     error: btccResult.error,
@@ -109,5 +123,10 @@ export function toUsdtSymbol(symbol: string): UsdtSymbol {
     sourceId: "universe",
     lastPrice: null,
     volume: null,
+    contractType: "USDT-M Perpetual",
+    marginAsset: "USDT",
+    settlement: "Perpetual",
+    maxLeverage: null,
+    instId: null,
   };
 }

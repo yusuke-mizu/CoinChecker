@@ -3,15 +3,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HIGH_BTC_CORR } from "@/lib/correlation/pearson";
 import { computeMarketRisk } from "@/lib/scoring/market-risk";
-import { applyRanks, topLong, topShort } from "@/lib/scoring/ranking";
+import { applyRanks, topLong, topReversal, topShort } from "@/lib/scoring/ranking";
 import { DATA_SOURCE_NOTES, DISCLAIMER } from "@/lib/analysis/notes";
-import type { TickerSnapshot } from "@/lib/types/market";
+import type { TickerSnapshot, PerpetualContract } from "@/lib/types/market";
 import type {
   MarketEnvSnapshot,
   MarketRisk,
   SymbolAnalysis,
 } from "@/lib/types/scoring";
 import { SymbolDetail } from "@/components/SymbolDetail";
+import { TradeDesk } from "@/components/TradeDesk";
 import {
   formatCorr,
   formatNum,
@@ -46,6 +47,7 @@ type SortKey =
 type UniverseResponse = {
   symbols: string[];
   tickers: Record<string, TickerSnapshot>;
+  contracts?: Record<string, PerpetualContract>;
   btccCount: number;
   skippedNoOkx: number;
   source: string;
@@ -101,6 +103,7 @@ export function Dashboard() {
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [btccCount, setBtccCount] = useState<number | null>(null);
   const [btccPreview, setBtccPreview] = useState<string[]>([]);
+  const [contracts, setContracts] = useState<Record<string, PerpetualContract>>({});
   const abortRef = useRef(false);
   const runningRef = useRef(false);
 
@@ -116,6 +119,8 @@ export function Dashboard() {
 
   const longs = useMemo(() => topLong(ranked, 5), [ranked]);
   const shorts = useMemo(() => topShort(ranked, 5), [ranked]);
+  const bullRev = useMemo(() => topReversal(ranked, "bullish", 5), [ranked]);
+  const bearRev = useMemo(() => topReversal(ranked, "bearish", 5), [ranked]);
 
   const visible = useMemo(() => {
     let next = ranked;
@@ -196,6 +201,7 @@ export function Dashboard() {
       if (!envRes.ok) throw new Error(env.error || "市場環境の取得に失敗しました");
       setMarket(env);
       if (universe.warning) setWarning(universe.warning);
+      if (universe.contracts) setContracts(universe.contracts);
       const symbols = universe.symbols;
       setProgress({ done: 0, total: symbols.length });
       const collected: SymbolAnalysis[] = [];
@@ -238,10 +244,28 @@ export function Dashboard() {
               btcCorrelation: null,
               rankLong: null,
               rankShort: null,
+              reversal: null,
+              futures: null,
+              contract: null,
             });
           }
         } else {
-          collected.push(...(json.results ?? []));
+          collected.push(
+            ...(json.results ?? []).map((row) => {
+              const c = universe.contracts?.[row.symbol];
+              if (!c) return row;
+              return {
+                ...row,
+                contract: {
+                  contractType: c.contractType,
+                  quoteAsset: c.quoteAsset,
+                  marginAsset: c.marginAsset,
+                  settlement: c.settlement,
+                  maxLeverage: c.maxLeverage,
+                },
+              };
+            }),
+          );
         }
         setRows([...collected]);
         setProgress({ done: collected.length, total: symbols.length });
@@ -259,10 +283,10 @@ export function Dashboard() {
   useEffect(() => {
     if (!refreshMin) return;
     const id = window.setInterval(() => {
-      void runPhase13();
+      void runScan();
     }, refreshMin * 60_000);
     return () => window.clearInterval(id);
-  }, [refreshMin, runPhase13]);
+  }, [refreshMin, runScan]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -284,7 +308,7 @@ export function Dashboard() {
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-50">Coin Checker</h1>
           <p className="mt-1 max-w-3xl text-sm text-zinc-400">
-            Phase 1〜3: BTCCのUSDT銘柄一覧を動的取得し、BTC/USDTの4H / 1H / 15M指標とスコアを表示します。
+            USDT-M Perpetual のみを対象に、ENTRY / REVERSAL / EXIT を分けて表示します。
             注文・決済・ポジション操作はありません。
           </p>
         </div>
@@ -316,15 +340,15 @@ export function Dashboard() {
           ) : null}
           <button
             type="button"
-            onClick={() => void runScan()}
+            onClick={() => void runPhase13()}
             disabled={loading}
             className="h-10 rounded-md border border-zinc-600 px-4 text-sm text-zinc-200 hover:border-zinc-400 disabled:cursor-wait disabled:opacity-60"
           >
-            {loading ? "分析中..." : "全銘柄スキャン"}
+            BTCのみ
           </button>
           <button
             type="button"
-            onClick={() => void runPhase13()}
+            onClick={() => void runScan()}
             disabled={loading}
             className="h-10 rounded-md bg-emerald-500 px-4 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:cursor-wait disabled:opacity-60"
           >
@@ -367,13 +391,13 @@ export function Dashboard() {
 
       {!market && !loading && ranked.length === 0 ? (
         <div className="rounded-lg border border-dashed border-zinc-800 bg-zinc-900/40 px-5 py-10 text-center text-sm text-zinc-400">
-          「分析開始」で Phase 1〜3（BTCC銘柄一覧 + BTCのOHLCV/指標/スコア）を実行します。DB保存はありません。
+          「分析開始」で USDT-M Perpetual 一覧を取得し、その瞬間のデータだけを採点します。DB保存はありません。
         </div>
       ) : null}
 
       {market || ranked.length ? (
         <>
-          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             <StatusCard
               label="BTC PRICE"
               value={formatPrice(btc?.ticker?.last)}
@@ -390,6 +414,7 @@ export function Dashboard() {
               value={market?.dominancePct != null ? `${market.dominancePct.toFixed(1)}%` : "—"}
               sub={market?.dominanceNote ?? "CoinGecko /global"}
             />
+            <StatusCard label="DXY / NASDAQ / 10Y" value="—" sub="公式の無料API未配線（0点）" />
             <div className={`rounded-lg border p-4 ${risk ? riskClass(risk.level) : "border-zinc-800 bg-zinc-900/80"}`}>
               <div className="text-[11px] tracking-[0.16em] opacity-80">MARKET RISK</div>
               <div className="mt-1 font-mono text-xl">
@@ -427,16 +452,28 @@ export function Dashboard() {
             </section>
           ) : null}
 
-          {risk && risk.score >= 50 ? (
+          {risk && risk.score >= 41 ? (
             <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
               {risk.warning} {risk.reasons.slice(0, 3).join(" / ")}
             </div>
           ) : null}
 
           <section className="grid gap-4 lg:grid-cols-2">
-            <RankList title="TOP LONG" rows={longs} accent="emerald" onSelect={setSelected} />
-            <RankList title="TOP SHORT" rows={shorts} accent="rose" onSelect={setSelected} />
+            <RankList title="TOP ENTRY LONG" rows={longs} accent="emerald" onSelect={setSelected} />
+            <RankList title="TOP ENTRY SHORT" rows={shorts} accent="rose" onSelect={setSelected} />
           </section>
+          <section className="grid gap-4 lg:grid-cols-2">
+            <RankList title="TOP BULLISH REVERSAL" rows={bullRev} accent="emerald" onSelect={setSelected} score="revBull" />
+            <RankList title="TOP BEARISH REVERSAL" rows={bearRev} accent="rose" onSelect={setSelected} score="revBear" />
+          </section>
+
+          <TradeDesk
+            ranked={ranked}
+            market={market}
+            risk={risk}
+            contracts={contracts}
+            onSelect={setSelected}
+          />
 
           <section className="flex flex-wrap items-center gap-2">
             <input
@@ -465,6 +502,7 @@ export function Dashboard() {
                 <tr>
                   <Th label="Rank" onClick={() => toggleSort("rankLong")} />
                   <Th label="Symbol" onClick={() => toggleSort("symbol")} />
+                  <th className="px-2 py-2 font-medium">Type</th>
                   <Th label="Price" onClick={() => toggleSort("price")} />
                   <Th label="24h" onClick={() => toggleSort("change")} />
                   <Th label="LONG" onClick={() => toggleSort("long")} />
@@ -481,6 +519,7 @@ export function Dashboard() {
                   <th className="px-2 py-2 font-medium">Vol</th>
                   <Th label="BTC corr" onClick={() => toggleSort("corr")} />
                   <Th label="Signal" onClick={() => toggleSort("signal")} />
+                  <th className="px-2 py-2 font-medium">Reversal</th>
                   <th className="px-2 py-2 font-medium">Updated</th>
                 </tr>
               </thead>
@@ -496,6 +535,9 @@ export function Dashboard() {
                     >
                       <td className="px-2 py-2 font-mono">{row.rankLong ?? "—"}</td>
                       <td className="px-2 py-2 font-mono text-zinc-100">{row.display}</td>
+                      <td className="px-2 py-2 text-[10px] text-zinc-500">
+                        {row.contract?.contractType ?? "USDT-M Perp"}
+                      </td>
                       <td className="px-2 py-2 font-mono">{formatPrice(row.ticker?.last)}</td>
                       <td
                         className={`px-2 py-2 font-mono ${
@@ -524,6 +566,9 @@ export function Dashboard() {
                         <span className={`rounded border px-1.5 py-0.5 text-[10px] ${signalClass(row.signal)}`}>
                           {row.signal}
                         </span>
+                      </td>
+                      <td className="px-2 py-2 text-[10px] text-zinc-400">
+                        {row.reversal?.signal ?? "—"}
                       </td>
                       <td className="px-2 py-2 text-zinc-500" suppressHydrationWarning>
                         {new Date(row.updatedAt).toLocaleTimeString()}
@@ -572,11 +617,13 @@ function RankList({
   rows,
   accent,
   onSelect,
+  score = "entry",
 }: {
   title: string;
   rows: SymbolAnalysis[];
   accent: "emerald" | "rose";
   onSelect: (row: SymbolAnalysis) => void;
+  score?: "entry" | "revBull" | "revBear";
 }) {
   const color = accent === "emerald" ? "text-emerald-300" : "text-rose-300";
   return (
@@ -586,7 +633,18 @@ function RankList({
         {rows.length === 0 ? (
           <p className="text-xs text-zinc-500">まだランキングを作るデータがありません。</p>
         ) : (
-          rows.map((row, index) => (
+          rows.map((row, index) => {
+            const value =
+              score === "revBull"
+                ? row.reversal?.bullish
+                : score === "revBear"
+                  ? row.reversal?.bearish
+                  : accent === "emerald"
+                    ? row.long?.total
+                    : row.short?.total;
+            const badge =
+              score === "entry" ? row.signal : row.reversal?.signal ?? row.signal;
+            return (
             <button
               key={row.symbol}
               type="button"
@@ -596,15 +654,14 @@ function RankList({
               <span className="flex items-center gap-3">
                 <span className="w-5 font-mono text-xs text-zinc-500">{index + 1}</span>
                 <span className="font-mono text-sm">{row.display}</span>
-                <span className={`rounded border px-1.5 py-0.5 text-[10px] ${signalClass(row.signal)}`}>
-                  {row.signal}
+                <span className={`rounded border px-1.5 py-0.5 text-[10px] ${signalClass(badge)}`}>
+                  {badge}
                 </span>
               </span>
-              <span className={`font-mono text-sm ${color}`}>
-                {accent === "emerald" ? row.long?.total : row.short?.total}
-              </span>
+              <span className={`font-mono text-sm ${color}`}>{value}</span>
             </button>
-          ))
+            );
+          })
         )}
       </div>
     </div>

@@ -28,6 +28,22 @@ export type UsdtSymbol = {
   sourceId: string;
   lastPrice: number | null;
   volume: number | null;
+  contractType?: "USDT-M Perpetual";
+  marginAsset?: "USDT";
+  settlement?: "Perpetual";
+  maxLeverage?: number | null;
+  instId?: string | null;
+};
+
+export type PerpetualContract = {
+  symbol: string;
+  display: string;
+  contractType: "USDT-M Perpetual";
+  quoteAsset: "USDT";
+  marginAsset: "USDT";
+  settlement: "Perpetual";
+  maxLeverage: number | null;
+  instId: string;
 };
 
 export type DataIssueCode =

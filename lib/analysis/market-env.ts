@@ -4,8 +4,10 @@ import { assessCandleQuality } from "@/lib/scoring/quality";
 import { computeTimeframeIndicators } from "@/lib/scoring/indicators";
 import { scoreDirection } from "@/lib/scoring/engine";
 import { classifySignal } from "@/lib/scoring/signal";
+import { scoreReversal } from "@/lib/scoring/reversal";
+import { loadFuturesPositioning } from "@/lib/analysis/futures-data";
 import { getTtlCache, setTtlCache } from "@/lib/util/ttl-cache";
-import type { MarketEnvSnapshot, SymbolAnalysis, TimeframeIndicators } from "@/lib/types/scoring";
+import type { FuturesPositioning, MarketEnvSnapshot, SymbolAnalysis, TimeframeIndicators } from "@/lib/types/scoring";
 
 const CACHE_KEY = "market-env-v1";
 const CACHE_MS = 60_000;
@@ -17,13 +19,17 @@ function btcAnalysis(
   tf15m: TimeframeIndicators | null,
   dominancePct: number | null,
   notes: string[],
+  futures: FuturesPositioning | null,
 ): SymbolAnalysis {
   const market = { btc4h: tf4h, dominancePct, isBtc: true };
-  const long = tf4h || tf1h || tf15m ? scoreDirection("long", { market, tf4h, tf1h, tf15m }) : null;
-  const short = tf4h || tf1h || tf15m ? scoreDirection("short", { market, tf4h, tf1h, tf15m }) : null;
+  const long =
+    tf4h || tf1h || tf15m ? scoreDirection("long", { market, tf4h, tf1h, tf15m, futures }) : null;
+  const short =
+    tf4h || tf1h || tf15m ? scoreDirection("short", { market, tf4h, tf1h, tf15m, futures }) : null;
+  const reversal = scoreReversal({ tf4h, tf1h, tf15m, btc4h: tf4h, futures });
   const classified =
     long && short
-      ? classifySignal(long, short)
+      ? classifySignal(long, short, reversal)
       : { difference: null, bias: null, signal: "DATA INSUFFICIENT" as const };
   return {
     symbol: "BTCUSDT",
@@ -46,6 +52,15 @@ function btcAnalysis(
     btcCorrelation: 1,
     rankLong: null,
     rankShort: null,
+    reversal,
+    futures,
+    contract: {
+      contractType: "USDT-M Perpetual",
+      quoteAsset: "USDT",
+      marginAsset: "USDT",
+      settlement: "Perpetual",
+      maxLeverage: null,
+    },
   };
 }
 
@@ -104,8 +119,12 @@ export async function loadMarketEnv(force = false): Promise<MarketEnvSnapshot> {
       ? "CoinGecko /global did not return BTC dominance."
       : "Spot BTC dominance from CoinGecko /global (level only, not a history series).";
 
+  const futures = await loadFuturesPositioning("BTCUSDT", tf4h, tf1h, tf15m);
+  if (!futures.availableOi) notes.push("OI unavailable");
+  if (!futures.availableFunding) notes.push("Funding unavailable");
+
   const snapshot: MarketEnvSnapshot = {
-    btc: btcAnalysis(tickerResult.ticker, tf4h, tf1h, tf15m, dominancePct, notes),
+    btc: btcAnalysis(tickerResult.ticker, tf4h, tf1h, tf15m, dominancePct, notes, futures),
     btc4h: tf4h,
     btc1hCloses: c1.candles.map((c) => c.close),
     dominancePct,

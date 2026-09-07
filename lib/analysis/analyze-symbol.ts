@@ -5,6 +5,8 @@ import { HttpError } from "@/lib/market-data/http";
 import { computeTimeframeIndicators } from "@/lib/scoring/indicators";
 import { scoreDirection } from "@/lib/scoring/engine";
 import { classifySignal } from "@/lib/scoring/signal";
+import { scoreReversal } from "@/lib/scoring/reversal";
+import { loadFuturesPositioning } from "@/lib/analysis/futures-data";
 import { assessCandleQuality } from "@/lib/scoring/quality";
 import { btcReturnCorrelation, HIGH_BTC_CORR } from "@/lib/correlation/pearson";
 import type { CoreTimeframe, DataIssueCode } from "@/lib/types/market";
@@ -58,6 +60,15 @@ function baseAnalysis(
     btcCorrelation: null,
     rankLong: null,
     rankShort: null,
+    reversal: null,
+    futures: null,
+    contract: {
+      contractType: "USDT-M Perpetual",
+      quoteAsset: "USDT",
+      marginAsset: "USDT",
+      settlement: "Perpetual",
+      maxLeverage: null,
+    },
     ...extras,
   };
 }
@@ -152,9 +163,19 @@ export async function analyzeSymbol(
     dominancePct: context.dominancePct,
     isBtc: compact === "BTCUSDT",
   };
-  const long = scoreDirection("long", { market, tf4h, tf1h, tf15m });
-  const short = scoreDirection("short", { market, tf4h, tf1h, tf15m });
-  const classified = classifySignal(long, short);
+  const futures = await loadFuturesPositioning(compact, tf4h, tf1h, tf15m);
+  if (!futures.availableOi) notes.push("OI unavailable");
+  if (!futures.availableFunding) notes.push("Funding unavailable");
+  const long = scoreDirection("long", { market, tf4h, tf1h, tf15m, futures });
+  const short = scoreDirection("short", { market, tf4h, tf1h, tf15m, futures });
+  const reversal = scoreReversal({
+    tf4h,
+    tf1h,
+    tf15m,
+    btc4h: btc4hForMarket,
+    futures,
+  });
+  const classified = classifySignal(long, short, reversal);
 
   const btcCloses =
     compact === "BTCUSDT" ? closes1h : context.btc1hCloses;
@@ -181,5 +202,14 @@ export async function analyzeSymbol(
     btcCorrelation,
     rankLong: null,
     rankShort: null,
+    reversal,
+    futures,
+    contract: {
+      contractType: "USDT-M Perpetual",
+      quoteAsset: "USDT",
+      marginAsset: "USDT",
+      settlement: "Perpetual",
+      maxLeverage: null,
+    },
   };
 }

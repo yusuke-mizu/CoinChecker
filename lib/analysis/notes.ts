@@ -1,8 +1,8 @@
 export const DATA_SOURCE_NOTES = [
   "TradingView has no public market-data REST API. Scraping TradingView is prohibited by their Terms of Service.",
   "BTCC official symbol list (GET /v1/config/symbollist) and klines (ReqKline) require authenticated login. This app does not call order/position APIs.",
-  "USDT symbols are loaded from CoinGecko public BTCC exchange tickers (paginated, order=base_target). Phase 1-3 scores BTC first; later phases intersect that list with OKX USDT SWAP for OHLCV.",
-  "OHLCV and 24h ticker come from OKX public SWAP market data for the same USDT instrument.",
+  "USDT-M Perpetual only: CoinGecko BTCC names are intersected with OKX live USDT-margined linear SWAP (instType=SWAP, settleCcy=USDT, ctType=linear). Spot and coin-margined contracts are excluded from scoring.",
+  "OI history: OKX GET /api/v5/rubik/stat/contracts/open-interest-history (5m). Funding: GET /api/v5/public/funding-rate and funding-rate-history. Missing OI/Funding does not stop analysis; those buckets are marked unavailable and scores are renormalized. No guessed values.",
   "BTC dominance comes from CoinGecko /global (spot snapshot, not a dominance trend series).",
 ];
 

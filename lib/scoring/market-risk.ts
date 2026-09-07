@@ -76,7 +76,15 @@ export function computeMarketRisk(input: {
 
   score = clamp(Math.round(score), 0, 100);
   const level: MarketRiskLevel =
-    score >= 70 ? "HIGH" : score >= 50 ? "ELEVATED" : score >= 30 ? "MODERATE" : "LOW";
+    score >= 81
+      ? "EXTREME"
+      : score >= 61
+        ? "VERY HIGH RISK"
+        : score >= 41
+          ? "HIGH RISK"
+          : score >= 21
+            ? "CAUTION"
+            : "NORMAL";
 
   return {
     score,

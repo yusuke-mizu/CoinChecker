@@ -26,6 +26,11 @@ export type TimeframeIndicators = {
   volumeRatio: number | null;
   structure: "HH_HL" | "LH_LL" | "MIXED" | "UNKNOWN";
   trend: TrendLabel;
+  lastClose: number | null;
+  prevClose: number | null;
+  divergence: "bearish" | "bullish" | "none";
+  upperWick: number | null;
+  lowerWick: number | null;
 };
 
 export type ScoreBreakdownItem = {
@@ -43,11 +48,14 @@ export type DirectionScore = {
     trend4h: number;
     trend1h: number;
     trend15m: number;
-    volume: number;
     momentum: number;
-    timing: number;
+    volume: number;
+    priceAction: number;
+    btcAlign: number;
+    futures: number;
   };
   items: ScoreBreakdownItem[];
+  renormalized: boolean;
 };
 
 export type SignalLabel =
@@ -59,6 +67,7 @@ export type SignalLabel =
   | "STRONG SHORT CANDIDATE"
   | "SHORT CANDIDATE"
   | "WATCH SHORT"
+  | "SHORT-TERM REVERSAL CANDIDATE"
   | "NO SIGNAL"
   | "CONFLICT / NO SIGNAL"
   | "DATA INSUFFICIENT"
@@ -83,9 +92,89 @@ export type SymbolAnalysis = {
   btcCorrelation: number | null;
   rankLong: number | null;
   rankShort: number | null;
+  reversal: ReversalAssessment | null;
+  futures: FuturesPositioning | null;
+  contract: {
+    contractType: "USDT-M Perpetual";
+    quoteAsset: "USDT";
+    marginAsset: "USDT";
+    settlement: "Perpetual";
+    maxLeverage: number | null;
+  } | null;
 };
 
-export type MarketRiskLevel = "LOW" | "MODERATE" | "ELEVATED" | "HIGH";
+export type ReversalSide = "BULLISH REVERSAL" | "BEARISH REVERSAL" | "NO REVERSAL";
+
+export type ReversalAssessment = {
+  bullish: number;
+  bearish: number;
+  signal: ReversalSide;
+  reasons: string[];
+  itemsBull: ScoreBreakdownItem[];
+  itemsBear: ScoreBreakdownItem[];
+};
+
+export type OiChangeBand = "NORMAL" | "NOTICE" | "HIGH" | "EXTREME" | "UNAVAILABLE";
+
+export type PositioningStructure =
+  | "LONG BUILDUP"
+  | "SHORT BUILDUP"
+  | "LONG LIQUIDATION CANDIDATE"
+  | "SHORT COVERING / SQUEEZE CANDIDATE"
+  | "LONG OVERCROWDED"
+  | "SHORT OVERCROWDED"
+  | "NEUTRAL"
+  | "UNAVAILABLE";
+
+export type FuturesPositioning = {
+  availableOi: boolean;
+  availableFunding: boolean;
+  currentOi: number | null;
+  oiUsd: number | null;
+  oiChange15mPct: number | null;
+  oiChange1hPct: number | null;
+  oiChange4hPct: number | null;
+  oiAccel: number | null;
+  oiBand: OiChangeBand;
+  oiZScore: number | null;
+  oiPercentile: number | null;
+  fundingRate: number | null;
+  fundingNextTime: number | null;
+  fundingChange: number | null;
+  fundingPercentile: number | null;
+  fundingZScore: number | null;
+  priceChange1hPct: number | null;
+  structure: PositioningStructure;
+  narrativeJa: string;
+  score: number;
+  oiMomentum: number;
+  fundingBias: number;
+  priceOi: number;
+  liquidation: number;
+  flags: string[];
+  longPoints: number;
+  shortPoints: number;
+  longReason: string;
+  shortReason: string;
+};
+
+export type ExitAlertLevel = "NORMAL" | "WATCH" | "CAUTION" | "HIGH ALERT" | "CRITICAL";
+export type ExitHierarchy = "NONE" | "LEVEL 1" | "LEVEL 2" | "LEVEL 3" | "LEVEL 4";
+
+export type ExitAlert = {
+  score: number;
+  level: ExitAlertLevel;
+  hierarchy: ExitHierarchy;
+  reasons: string[];
+  headline: string;
+};
+
+export type MarketRiskLevel =
+  | "NORMAL"
+  | "CAUTION"
+  | "HIGH RISK"
+  | "VERY HIGH RISK"
+  | "EXTREME";
 
 export type MarketRisk = {
   score: number;

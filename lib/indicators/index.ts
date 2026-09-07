@@ -26,6 +26,58 @@ export function lastEma(values: number[], period: number): number | null {
   return value ?? null;
 }
 
+export function rsiSeries(closes: number[], period = 14): Array<number | null> {
+  const out: Array<number | null> = Array(closes.length).fill(null);
+  if (closes.length < period + 1) return out;
+  let gain = 0;
+  let loss = 0;
+  for (let i = 1; i <= period; i += 1) {
+    const diff = closes[i] - closes[i - 1];
+    if (diff >= 0) gain += diff;
+    else loss -= diff;
+  }
+  let avgGain = gain / period;
+  let avgLoss = loss / period;
+  const rsiAt = (g: number, l: number) => (l === 0 ? 100 : 100 - 100 / (1 + g / l));
+  out[period] = rsiAt(avgGain, avgLoss);
+  for (let i = period + 1; i < closes.length; i += 1) {
+    const diff = closes[i] - closes[i - 1];
+    const g = diff > 0 ? diff : 0;
+    const l = diff < 0 ? -diff : 0;
+    avgGain = (avgGain * (period - 1) + g) / period;
+    avgLoss = (avgLoss * (period - 1) + l) / period;
+    out[i] = rsiAt(avgGain, avgLoss);
+  }
+  return out;
+}
+
+export function rsiDivergence(
+  closes: number[],
+  lookback = 40,
+): "bearish" | "bullish" | "none" {
+  const rsi = rsiSeries(closes);
+  const start = Math.max(0, closes.length - lookback);
+  const price = closes.slice(start);
+  const osc = rsi.slice(start).map((v) => v ?? Number.NaN);
+  if (price.length < 16) return "none";
+  const mid = Math.floor(price.length / 2);
+  const firstP = price.slice(0, mid);
+  const lastP = price.slice(mid);
+  const firstR = osc.slice(0, mid).filter((v) => Number.isFinite(v));
+  const lastR = osc.slice(mid).filter((v) => Number.isFinite(v));
+  if (!firstR.length || !lastR.length) return "none";
+  const hh = Math.max(...lastP) > Math.max(...firstP);
+  const lh = Math.max(...lastP) < Math.max(...firstP);
+  const rsiLowerHigh = Math.max(...lastR) < Math.max(...firstR);
+  const rsiHigherLow = Math.min(...lastR) > Math.min(...firstR);
+  const ll = Math.min(...lastP) < Math.min(...firstP);
+  const hl = Math.min(...lastP) > Math.min(...firstP);
+  if (hh && rsiLowerHigh) return "bearish";
+  if (ll && rsiHigherLow) return "bullish";
+  if (lh && rsiHigherLow && hl) return "bullish";
+  return "none";
+}
+
 export function rsiWilder(closes: number[], period = 14): number | null {
   if (closes.length < period + 1) return null;
   let gain = 0;

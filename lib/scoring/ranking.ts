@@ -34,3 +34,18 @@ export function topShort(rows: SymbolAnalysis[], limit = 5): SymbolAnalysis[] {
     .sort(byShort)
     .slice(0, limit);
 }
+
+export function topReversal(
+  rows: SymbolAnalysis[],
+  side: "bullish" | "bearish",
+  limit = 5,
+): SymbolAnalysis[] {
+  return [...rows]
+    .filter((row) => row.status === "ok" && row.reversal)
+    .sort((a, b) =>
+      side === "bullish"
+        ? (b.reversal?.bullish ?? 0) - (a.reversal?.bullish ?? 0)
+        : (b.reversal?.bearish ?? 0) - (a.reversal?.bearish ?? 0),
+    )
+    .slice(0, limit);
+}

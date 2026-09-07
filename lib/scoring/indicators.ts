@@ -3,6 +3,7 @@ import {
   lastEma,
   macd,
   priceStructure,
+  rsiDivergence,
   rsiWilder,
   volumeRatio,
 } from "@/lib/indicators";
@@ -38,6 +39,11 @@ export function computeTimeframeIndicators(
           ? "Bearish"
           : "Neutral";
 
+  const last = candles[candles.length - 1];
+  const range = last ? last.high - last.low : 0;
+  const upperWick = last && range > 0 ? (last.high - Math.max(last.open, last.close)) / range : null;
+  const lowerWick = last && range > 0 ? (Math.min(last.open, last.close) - last.low) / range : null;
+
   return {
     timeframe,
     ema20,
@@ -53,6 +59,11 @@ export function computeTimeframeIndicators(
     minusDi: adxResult.minusDi,
     volumeRatio: volRatio,
     structure,
+    lastClose: closes[closes.length - 1] ?? null,
+    prevClose: closes.length > 1 ? closes[closes.length - 2] : null,
+    divergence: rsiDivergence(closes),
+    upperWick,
+    lowerWick,
     trend: classifyTrend({
       ema20,
       ema50,
