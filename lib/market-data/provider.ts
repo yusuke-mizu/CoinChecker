@@ -22,3 +22,9 @@ export function toDisplaySymbol(symbol: string): string {
 export function toCompactUsdt(symbol: string): string {
   return symbol.replace(/[-_/]/g, "").toUpperCase();
 }
+
+export function createMarketDataProvider(
+  impl: MarketDataProvider,
+): MarketDataProvider {
+  return impl;
+}

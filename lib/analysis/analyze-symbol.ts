@@ -1,5 +1,5 @@
 import { fetchBtccUsdtSymbols } from "@/lib/exchanges/btcc";
-import { fetchOkxOhlcv, fetchOkxTicker } from "@/lib/market-data/okx";
+import { okxSwapProvider } from "@/lib/market-data/okx-provider";
 import { toCompactUsdt, toDisplaySymbol } from "@/lib/market-data/provider";
 import { HttpError } from "@/lib/market-data/http";
 import { computeTimeframeIndicators } from "@/lib/scoring/indicators";
@@ -79,7 +79,7 @@ export async function analyzeSymbol(
   let ticker = context.tickers?.[compact] ?? null;
   if (!ticker) {
     try {
-      ticker = await fetchOkxTicker(compact);
+      ticker = await okxSwapProvider.fetchTicker(compact);
     } catch (error) {
       notes.push(`Ticker: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -87,7 +87,7 @@ export async function analyzeSymbol(
 
   const timeframeResults = await Promise.allSettled(
     CORE.map(async (timeframe) => {
-      const candles = await fetchOkxOhlcv(compact, timeframe, CANDLE_LIMIT);
+      const candles = await okxSwapProvider.fetchOhlcv(compact, timeframe, CANDLE_LIMIT);
       const quality = assessCandleQuality(candles, timeframe);
       return { timeframe, candles, quality };
     }),
@@ -133,7 +133,7 @@ export async function analyzeSymbol(
   let btc4hForMarket = compact === "BTCUSDT" ? tf4h : context.btc4h;
   if (compact !== "BTCUSDT" && !btc4hForMarket) {
     try {
-      const btcCandles = await fetchOkxOhlcv("BTCUSDT", "4h", CANDLE_LIMIT);
+      const btcCandles = await okxSwapProvider.fetchOhlcv("BTCUSDT", "4h", CANDLE_LIMIT);
       const quality = assessCandleQuality(btcCandles, "4h");
       if (quality.ok) {
         btc4hForMarket = computeTimeframeIndicators("4h", btcCandles);

@@ -27,7 +27,12 @@ type CoinGeckoTickersResponse = {
  * Public, unauthenticated listing used here:
  * CoinGecko Demo API GET /exchanges/btcc/tickers
  * Docs: https://docs.coingecko.com/reference/exchanges-id-tickers
+ * Page size is 100. Use order=base_target for stable pagination.
  * Rate limit (Demo): typically ~5-30 calls/min; paginate with delay.
+ *
+ * TODO: BTCC unofficial WS docs (2018) expose public GetActiveContracts, but
+ * examples are BTC_USD spot-style symbols, not current BTCC USDT products.
+ * Do not scrape TradingView. Do not call BTCC order/position endpoints.
  */
 export async function fetchBtccUsdtSymbols(): Promise<UsdtSymbol[]> {
   const collected: UsdtSymbol[] = [];
@@ -37,7 +42,7 @@ export async function fetchBtccUsdtSymbols(): Promise<UsdtSymbol[]> {
     let tickers: CoinGeckoTicker[] = [];
     try {
       const data = await fetchJson<CoinGeckoTickersResponse>(
-        `https://api.coingecko.com/api/v3/exchanges/btcc/tickers?page=${page}`,
+        `https://api.coingecko.com/api/v3/exchanges/btcc/tickers?page=${page}&order=base_target`,
         { timeoutMs: 15_000, retries: 2 },
       );
       tickers = data.tickers ?? [];
@@ -66,7 +71,7 @@ export async function fetchBtccUsdtSymbols(): Promise<UsdtSymbol[]> {
       });
     }
 
-    if (tickers.length < 50) break;
+    if (tickers.length < 100) break;
     if (page < 8) {
       await new Promise((resolve) => setTimeout(resolve, 1600));
     }

@@ -99,6 +99,8 @@ export function Dashboard() {
   const [selected, setSelected] = useState<SymbolAnalysis | null>(null);
   const [refreshMin, setRefreshMin] = useState(0);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [btccCount, setBtccCount] = useState<number | null>(null);
+  const [btccPreview, setBtccPreview] = useState<string[]>([]);
   const abortRef = useRef(false);
   const runningRef = useRef(false);
 
@@ -125,6 +127,53 @@ export function Dashboard() {
     const dir = sortDir === "asc" ? 1 : -1;
     return [...next].sort((a, b) => dir * compareRows(a, b, sortKey));
   }, [ranked, query, filter, sortKey, sortDir]);
+
+  const runPhase13 = useCallback(async () => {
+    if (runningRef.current) return;
+    runningRef.current = true;
+    abortRef.current = false;
+    setLoading(true);
+    setError(null);
+    setWarning(null);
+    setRows([]);
+    setSelected(null);
+    setProgress({ done: 0, total: 1 });
+    try {
+      const response = await fetch("/api/phase13", { method: "POST" });
+      const json = (await response.json()) as {
+        error?: string;
+        market?: MarketEnvSnapshot;
+        focus?: SymbolAnalysis;
+        symbols?: {
+          count: number;
+          items: { display: string }[];
+          warning: string | null;
+          error: string | null;
+        };
+      };
+      if (!response.ok) throw new Error(json.error || "Phase 1-3 の取得に失敗しました");
+      if (json.market) setMarket(json.market);
+      if (json.focus) {
+        setRows([json.focus]);
+        setSelected(json.focus);
+      }
+      if (json.symbols) {
+        setBtccCount(json.symbols.count);
+        setBtccPreview(json.symbols.items.slice(0, 24).map((item) => item.display));
+        if (json.symbols.warning) setWarning(json.symbols.warning);
+        if (json.symbols.error && json.symbols.count === 0) {
+          setWarning(json.symbols.error);
+        }
+      }
+      setProgress({ done: 1, total: 1 });
+      setUpdatedAt(new Date().toISOString());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      runningRef.current = false;
+      setLoading(false);
+    }
+  }, []);
 
   const runScan = useCallback(async () => {
     if (runningRef.current) return;
@@ -210,10 +259,10 @@ export function Dashboard() {
   useEffect(() => {
     if (!refreshMin) return;
     const id = window.setInterval(() => {
-      void runScan();
+      void runPhase13();
     }, refreshMin * 60_000);
     return () => window.clearInterval(id);
-  }, [refreshMin, runScan]);
+  }, [refreshMin, runPhase13]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -235,7 +284,7 @@ export function Dashboard() {
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-50">Coin Checker</h1>
           <p className="mt-1 max-w-3xl text-sm text-zinc-400">
-            BTCC掲載USDT銘柄を動的取得し、その瞬間の4H / 1H / 15MからLONG/SHORTを別採点します。
+            Phase 1〜3: BTCCのUSDT銘柄一覧を動的取得し、BTC/USDTの4H / 1H / 15M指標とスコアを表示します。
             注文・決済・ポジション操作はありません。
           </p>
         </div>
@@ -268,6 +317,14 @@ export function Dashboard() {
           <button
             type="button"
             onClick={() => void runScan()}
+            disabled={loading}
+            className="h-10 rounded-md border border-zinc-600 px-4 text-sm text-zinc-200 hover:border-zinc-400 disabled:cursor-wait disabled:opacity-60"
+          >
+            {loading ? "分析中..." : "全銘柄スキャン"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void runPhase13()}
             disabled={loading}
             className="h-10 rounded-md bg-emerald-500 px-4 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:cursor-wait disabled:opacity-60"
           >
@@ -310,7 +367,7 @@ export function Dashboard() {
 
       {!market && !loading && ranked.length === 0 ? (
         <div className="rounded-lg border border-dashed border-zinc-800 bg-zinc-900/40 px-5 py-10 text-center text-sm text-zinc-400">
-          「分析開始」を押すと、その瞬間の市場データだけを取得してスコアリングします。DB保存はありません。
+          「分析開始」で Phase 1〜3（BTCC銘柄一覧 + BTCのOHLCV/指標/スコア）を実行します。DB保存はありません。
         </div>
       ) : null}
 
@@ -343,9 +400,32 @@ export function Dashboard() {
             <StatusCard
               label="UPDATED"
               value={updatedAt ? new Date(updatedAt).toLocaleTimeString() : "—"}
-              sub={`${ranked.length} symbols · memory only`}
+              sub={`${ranked.length} scored · BTCC USDT ${btccCount ?? "—"} · memory only`}
             />
           </section>
+
+          {btccPreview.length ? (
+            <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3">
+              <div className="text-[11px] tracking-[0.16em] text-zinc-500">
+                PHASE 1 · BTCC USDT SYMBOLS ({btccCount ?? btccPreview.length})
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {btccPreview.map((display) => (
+                  <span
+                    key={display}
+                    className="rounded border border-zinc-700 px-2 py-0.5 font-mono text-[11px] text-zinc-300"
+                  >
+                    {display}
+                  </span>
+                ))}
+                {btccCount != null && btccCount > btccPreview.length ? (
+                  <span className="px-2 py-0.5 text-[11px] text-zinc-500">
+                    +{btccCount - btccPreview.length} more
+                  </span>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
 
           {risk && risk.score >= 50 ? (
             <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
