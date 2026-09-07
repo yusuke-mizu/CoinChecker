@@ -56,13 +56,20 @@ npm run dev
 
 ## GitHub
 
-このディレクトリ（`coin-checker/`）が Git リポジトリです。ホームディレクトリの Git とは別です。
+このディレクトリ（`coin-checker/`）が Git リポジトリです。ホームディレクトリの Git とは別です。初回コミット済みで、remote `origin` は `https://github.com/yusuke-mizu/CoinChecker.git` を指しています。
 
-まだリモートが無い場合:
+GitHub CLI は入っていますが、まだログインしていません。次を実行してください。
 
 ```bash
 gh auth login
-gh repo create coin-checker --private --source=. --remote=origin --push
+git push -u origin main
+```
+
+まだ GitHub 上にリポジトリが無い場合（`Repository not found`）:
+
+```bash
+gh auth login
+gh repo create CoinChecker --private --source=. --remote=origin --push
 ```
 
 ## Cloudflare（どこからでも見る準備）
