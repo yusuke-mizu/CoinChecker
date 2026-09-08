@@ -101,7 +101,9 @@ export function TrackedSignalsPanel({
               </p>
               <p className="mt-1 text-zinc-400">
                 CORRELATION {set.correlationRisk} · REVERSAL {set.reversalRisk.toFixed(0)}
-                {" "}· STRESS {set.stressLevel} · QUALITY {set.dataQuality.toFixed(0)} · {set.leverage}x Risk
+                {" "}· BTC -5% STRESS {set.stressLevel}
+                {set.stressEstimatedPct == null ? "" : ` (~${set.stressEstimatedPct.toFixed(1)}%)`}
+                {" "}· QUALITY {set.dataQuality.toFixed(0)} · {set.leverage}x Risk
               </p>
               {set.profitProtection ? (
                 <p className="mt-2 font-semibold text-amber-300">PORTFOLIO PROFIT PROTECTION / 利益保護を検討</p>

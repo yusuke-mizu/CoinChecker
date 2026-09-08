@@ -63,6 +63,12 @@ function parseSnapshot(value: unknown): SignalScoreSnapshot | null {
     value.btcCorrelation < -1 ||
     value.btcCorrelation > 1
   )) return null;
+  if (value.btcBeta != null && (
+    typeof value.btcBeta !== "number" ||
+    !Number.isFinite(value.btcBeta) ||
+    value.btcBeta < -5 ||
+    value.btcBeta > 5
+  )) return null;
   if (value.confidence != null && !["HIGH", "MEDIUM", "LOW"].includes(String(value.confidence))) return null;
   if (value.marketVenue != null && !VENUES.has(String(value.marketVenue))) return null;
   if (typeof value.signalLabel !== "string" || value.signalLabel.length > 80) return null;

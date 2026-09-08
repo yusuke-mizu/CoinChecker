@@ -32,6 +32,7 @@ function snapshot(overrides: Partial<SignalScoreSnapshot> = {}): SignalScoreSnap
     exitAlert: 10,
     price: 100,
     btcCorrelation: 0.4,
+    btcBeta: 1.1,
     confidence: "MEDIUM",
     marketVenue: "okx",
     signalLabel: "STRONG LONG CANDIDATE",

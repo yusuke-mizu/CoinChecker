@@ -32,6 +32,7 @@ function normalizeSnapshot(snapshot: SignalScoreSnapshot): SignalScoreSnapshot {
     chasingPenalty: snapshot.chasingPenalty ?? 0,
     entryType: snapshot.entryType ?? "NO_ENTRY",
     entryDecision: snapshot.entryDecision ?? "NO_ENTRY",
+    btcBeta: snapshot.btcBeta ?? null,
   };
 }
 

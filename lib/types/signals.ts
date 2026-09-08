@@ -138,5 +138,6 @@ export type SignalSetCandidate = {
   dataQuality: number;
   setScore: number;
   stressLevel: "LOW" | "MEDIUM" | "HIGH";
+  stressEstimatedPct: number | null;
   leverage: number;
 };

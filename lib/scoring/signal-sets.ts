@@ -50,8 +50,23 @@ function aggregateSet(
   const longExposurePct = (longs.length / members.length) * 100;
   const shortExposurePct = (shorts.length / members.length) * 100;
   const netExposurePct = longExposurePct - shortExposurePct;
-  const stressValue = Math.abs(netExposurePct / 100) * averageAbsCorrelation * 5 * leverage;
-  const stressLevel = stressValue >= 3 ? "HIGH" : stressValue >= 1.5 ? "MEDIUM" : "LOW";
+  const betas = members.filter((item) => item.current.btcBeta != null);
+  const betaExposure = betas.length
+    ? average(
+        betas.map((item) =>
+          (item.direction === "LONG" ? 1 : -1) * (item.current.btcBeta ?? 0),
+        ),
+      )
+    : null;
+  const stressEstimatedPct = betaExposure == null ? null : Math.abs(betaExposure * 5 * leverage);
+  const stressLevel =
+    stressEstimatedPct == null
+      ? correlationRisk
+      : stressEstimatedPct >= 7
+        ? "HIGH"
+        : stressEstimatedPct >= 3
+          ? "MEDIUM"
+          : "LOW";
   const baseScore = average(members.map((item) => item.current.entry));
   const setScore = Math.round(Math.max(
     0,
@@ -83,6 +98,7 @@ function aggregateSet(
     dataQuality,
     setScore,
     stressLevel,
+    stressEstimatedPct,
     leverage,
   };
 }

@@ -27,6 +27,7 @@ function input(symbol: string, direction: "LONG" | "SHORT"): SignalObservation {
     exitAlert: 10,
     price: 100,
     btcCorrelation: 0.4,
+    btcBeta: 1.1,
     confidence: "MEDIUM",
     marketVenue: "okx",
     signalLabel: direction === "LONG" ? "STRONG LONG CANDIDATE" : "STRONG SHORT CANDIDATE",
