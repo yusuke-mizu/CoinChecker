@@ -1,1 +1,3 @@
 NEXTJS_ENV=development
+# Optional locally; required when CoinGecko rejects a shared datacenter IP.
+COINGECKO_DEMO_API_KEY=

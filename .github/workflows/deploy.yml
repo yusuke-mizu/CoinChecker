@@ -16,6 +16,13 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci
+      - name: Configure CoinGecko Demo API secret
+        if: env.COINGECKO_DEMO_API_KEY != ''
+        run: echo "$COINGECKO_DEMO_API_KEY" | npx wrangler secret put COINGECKO_DEMO_API_KEY
+        env:
+          COINGECKO_DEMO_API_KEY: ${{ secrets.COINGECKO_DEMO_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - run: npm run deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

@@ -1,4 +1,4 @@
-import { fetchJson } from "@/lib/market-data/http";
+import { fetchCoinGeckoJson } from "@/lib/market-data/coingecko";
 
 type GlobalResponse = {
   data?: {
@@ -11,8 +11,8 @@ type GlobalResponse = {
 /** CoinGecko public /global. Returns current BTC dominance only (no history). */
 export async function fetchBtcDominancePct(): Promise<number | null> {
   try {
-    const json = await fetchJson<GlobalResponse>(
-      "https://api.coingecko.com/api/v3/global",
+    const json = await fetchCoinGeckoJson<GlobalResponse>(
+      "/global",
       { timeoutMs: 12_000, retries: 1 },
     );
     const value = json.data?.market_cap_percentage?.btc;

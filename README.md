@@ -112,8 +112,9 @@ npm run deploy
 
 - `CLOUDFLARE_API_TOKEN` … Workers の Edit 権限がある API トークン
 - `CLOUDFLARE_ACCOUNT_ID` … ダッシュボード右サイドバーの Account ID
+- `COINGECKO_DEMO_API_KEY` … CoinGecko Developer DashboardのDemo API key。本番Workerの共有IPでキーレスAPIが403/429になる場合に必要
 
-`main` への push で `npm run deploy` が走ります。
+`main` への push でCoinGecko keyをWorker Secretへ登録してから `npm run deploy` が走ります。キーはサーバー側の `x-cg-demo-api-key` ヘッダーにだけ使われ、ブラウザやリポジトリには出ません。Cloudflare Dashboardから直接設定する場合は、Worker `coinchecker` の Settings → Variables and Secrets に `COINGECKO_DEMO_API_KEY` をSecretとして登録してください。
 
 ### 補足
 

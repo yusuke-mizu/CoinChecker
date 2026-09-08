@@ -1,4 +1,5 @@
-import { fetchJson, HttpError } from "@/lib/market-data/http";
+import { HttpError } from "@/lib/market-data/http";
+import { fetchCoinGeckoJson } from "@/lib/market-data/coingecko";
 import { toDisplaySymbol } from "@/lib/market-data/provider";
 import { getTtlCache, setTtlCache } from "@/lib/util/ttl-cache";
 import type { SourceAttribution, UsdtSymbol } from "@/lib/types/market";
@@ -53,8 +54,8 @@ async function loadBtccUsdtSymbols(): Promise<DiscoveredBtccSymbol[]> {
   for (let page = 1; page <= 12; page += 1) {
     let tickers: CoinGeckoTicker[] = [];
     try {
-      const data = await fetchJson<CoinGeckoTickersResponse>(
-        `https://api.coingecko.com/api/v3/exchanges/btcc/tickers?page=${page}&order=base_target`,
+      const data = await fetchCoinGeckoJson<CoinGeckoTickersResponse>(
+        `/exchanges/btcc/tickers?page=${page}&order=base_target`,
         { timeoutMs: 8_000, retries: 1 },
       );
       tickers = data.tickers ?? [];
