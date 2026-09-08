@@ -8,6 +8,7 @@ import { CandleChart } from "@/components/CandleChart";
 import { formatNum, formatPct, formatPrice, signalClass } from "@/components/format";
 import type { ExpectedEntryAssessment } from "@/lib/scoring/expected-entry";
 import type { TradePlan } from "@/lib/types/trade-decision";
+import { ReachPanel } from "@/components/ReachPanel";
 
 export function SymbolDetail({
   row,
@@ -54,6 +55,10 @@ export function SymbolDetail({
           <div className="grid gap-3 sm:grid-cols-2">
             <ExpectancyPanel assessment={row.entryExpectancy.long} />
             <ExpectancyPanel assessment={row.entryExpectancy.short} />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <ReachPanel symbol={row.display} analysis={row.reach.long} />
+            <ReachPanel symbol={row.display} analysis={row.reach.short} />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <TradePlanPanel plan={row.tradePlans.long} />

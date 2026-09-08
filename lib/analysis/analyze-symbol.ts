@@ -21,6 +21,7 @@ import { assessRegime } from "@/lib/scoring/regime";
 import { scoreEntryTiming } from "@/lib/scoring/entry-timing";
 import { scoreExpectedEntry } from "@/lib/scoring/expected-entry";
 import { buildTradePlan } from "@/lib/scoring/trade-plan";
+import { analyzeReach } from "@/lib/scoring/reach-probability";
 import { decideSetup, nextEntryWindow } from "@/lib/scoring/setup";
 import { dataSourceDisplay } from "@/lib/data/provider-mode";
 import { loadFuturesPositioning } from "@/lib/analysis/futures-data";
@@ -99,6 +100,7 @@ function baseAnalysis(
     short: null,
     entryExpectancy: { long: null, short: null },
     tradePlans: { long: null, short: null },
+    reach: { long: null, short: null },
     difference: null,
     bias: null,
     indicators: {},
@@ -354,6 +356,21 @@ export async function analyzeSymbol(
         })
       : null,
   };
+  const reachInput = {
+    candles: candlesByTimeframe,
+    indicators,
+    futures,
+    dataQuality: dataQuality.score,
+    hardStopPct: context.hardStopPct,
+  };
+  const reach = {
+    long: expectedLong
+      ? analyzeReach({ direction: "LONG" as const, assessment: expectedLong, ...reachInput })
+      : null,
+    short: expectedShort
+      ? analyzeReach({ direction: "SHORT" as const, assessment: expectedShort, ...reachInput })
+      : null,
+  };
 
   return {
     symbol: compact,
@@ -373,6 +390,7 @@ export async function analyzeSymbol(
     short,
     entryExpectancy: { long: expectedLong, short: expectedShort },
     tradePlans,
+    reach,
     difference: classified.difference,
     bias: classified.bias,
     signal: classified.signal,

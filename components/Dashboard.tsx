@@ -15,6 +15,8 @@ import type { BtccCandidate, TickerSnapshot, PerpetualContract } from "@/lib/typ
 import type { CandleVenue } from "@/lib/types/venue";
 import type { SignalSettings as SignalSettingsType, TrackedSignal } from "@/lib/types/signals";
 import type { ScreenResult } from "@/lib/types/screening";
+import { ReachRankingPanel } from "@/components/ReachRankingPanel";
+import Link from "next/link";
 import type {
   MarketEnvSnapshot,
   MarketRisk,
@@ -555,6 +557,12 @@ export function Dashboard() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/simulation"
+            className="flex h-10 items-center rounded-md border border-zinc-700 px-4 text-sm text-zinc-300 hover:border-zinc-500"
+          >
+            Simulation
+          </Link>
           <label className="text-xs text-zinc-500">
             自動更新
             <select
@@ -705,6 +713,8 @@ export function Dashboard() {
               </p>
             </section>
           ) : null}
+
+          <ReachRankingPanel rows={scoredRows} onSelect={setSelected} />
 
           <DecisionEnginePanel
             rows={scoredRows}

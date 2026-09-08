@@ -16,6 +16,7 @@ import type { TimingAssessment } from "@/lib/scoring/entry-timing";
 import type { SetupVerdict } from "@/lib/scoring/setup";
 import type { DirectionalExpectedEntry } from "@/lib/scoring/expected-entry";
 import type { TradePlan } from "./trade-decision";
+import type { DirectionalReach } from "./reach";
 
 export type TrendLabel =
   | "Strong Bullish"
@@ -110,6 +111,8 @@ export type SymbolAnalysis = {
   short: DirectionScore | null;
   entryExpectancy: DirectionalExpectedEntry;
   tradePlans: { long: TradePlan | null; short: TradePlan | null };
+  /** Reach probability and expected value if entered at the current price. */
+  reach: DirectionalReach;
   difference: number | null;
   bias: BiasLabel | null;
   signal: SignalLabel;

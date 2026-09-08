@@ -203,6 +203,33 @@ export function adx(highs: number[], lows: number[], closes: number[], period = 
   };
 }
 
+/** Wilder ATR as a causal series: index i uses candles up to and including i. */
+export function atrSeries(
+  candles: Array<{ high: number; low: number; close: number }>,
+  period = 14,
+): Array<number | null> {
+  const out: Array<number | null> = Array(candles.length).fill(null);
+  if (candles.length <= period) return out;
+  const tr: number[] = Array(candles.length).fill(0);
+  for (let i = 1; i < candles.length; i += 1) {
+    const previousClose = candles[i - 1].close;
+    tr[i] = Math.max(
+      candles[i].high - candles[i].low,
+      Math.abs(candles[i].high - previousClose),
+      Math.abs(candles[i].low - previousClose),
+    );
+  }
+  let sum = 0;
+  for (let i = 1; i <= period; i += 1) sum += tr[i];
+  let value = sum / period;
+  out[period] = value;
+  for (let i = period + 1; i < candles.length; i += 1) {
+    value = (value * (period - 1) + tr[i]) / period;
+    out[i] = value;
+  }
+  return out;
+}
+
 export function volumeRatio(volumes: number[], period = 20): number | null {
   if (volumes.length < period + 1) return null;
   const current = volumes[volumes.length - 1];
