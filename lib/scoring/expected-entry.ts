@@ -339,12 +339,13 @@ export function scoreExpectedEntry(input: {
   btc4h: TimeframeIndicators | null;
   btcCorrelation: number | null;
   dominancePct: number | null;
+  currentPrice?: number | null;
 }): ExpectedEntryAssessment | null {
   const side: Side = input.direction === "LONG" ? "long" : "short";
   const candles1h = input.candles["1h"] ?? [];
   const candles15m = input.candles["15m"] ?? candles1h;
   if (candles1h.length < 30 || candles15m.length < 20) return null;
-  const current = candles15m[candles15m.length - 1]?.close;
+  const current = input.currentPrice ?? candles15m[candles15m.length - 1]?.close;
   const atrValue = atr(candles1h);
   if (!current || !atrValue || atrValue <= 0) return null;
 

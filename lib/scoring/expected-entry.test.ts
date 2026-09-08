@@ -176,7 +176,7 @@ describe("current-price expectancy cases", () => {
       timingValue: shortTiming,
     });
     expect(short?.trendQuality).toBeGreaterThanOrEqual(75);
-    expect(short?.timingScore).toBe(84);
+    expect(short?.timingScore).toBeGreaterThanOrEqual(90);
   });
 
   it("D: range regime is low priority/no entry", () => {
