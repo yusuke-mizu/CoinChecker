@@ -91,7 +91,8 @@ export async function loadUniverse(force = false): Promise<UniverseResult> {
         : "対象はCoinGeckoで発見したBTCC候補です。BTCC公式確認ではなく、足は OKX → Bybit → Binance の補完データです。";
   } else {
     warning =
-      "BTCC候補の第三者Discoveryに失敗しました。OKX銘柄をBTCC銘柄として代用しないため、一覧は空です。";
+      "BTCC候補の第三者Discoveryに失敗しました。OKX銘柄をBTCC銘柄として代用しないため、一覧は空です。" +
+      (btccResult.error ? ` ${btccResult.error}` : "");
   }
 
   selected = sortUniverse(selected, venues);
