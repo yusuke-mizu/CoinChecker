@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { saveModel, summarise } from "@/lib/server/model-store";
+import { saveModel } from "@/lib/server/model-store";
 import { TRAIN_DEFAULTS, TRAIN_LIMITS, trainModel } from "@/lib/model/train";
 
 export const dynamic = "force-dynamic";
@@ -67,5 +67,3 @@ export async function POST(request: Request) {
     );
   }
 }
-
-export { summarise };
