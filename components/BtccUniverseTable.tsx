@@ -128,7 +128,12 @@ function CandidateTable({
                   <td className="px-2 py-2">{analysis?.futures?.availableOi ? "✓" : "N/A"}</td>
                   <td className="px-2 py-2">{analysis?.futures?.availableFunding ? "✓" : "N/A"}</td>
                   <td className="px-2 py-2 text-[10px] text-zinc-400">
-                    <div>Listing: CoinGecko / BTCC</div>
+                    <div>
+                      Listing:{" "}
+                      {candidate.sources.listing
+                        .map((source) => source.provider.toUpperCase())
+                        .join(" / ") || "N/A"}
+                    </div>
                     <div>OHLCV: {analysis?.sources.ohlcv?.provider.toUpperCase() ?? candidate.marketVenue?.toUpperCase() ?? "N/A"}</div>
                     <div>OI: {analysis?.sources.oi?.provider.toUpperCase() ?? "N/A"}</div>
                     <div>Funding: {analysis?.sources.funding?.provider.toUpperCase() ?? "N/A"}</div>

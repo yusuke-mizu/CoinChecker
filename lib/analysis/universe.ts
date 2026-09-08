@@ -190,10 +190,5 @@ export function toUsdtSymbol(symbol: string): UsdtSymbol {
     sourceId: "universe",
     lastPrice: null,
     volume: null,
-    contractType: "USDT-M Perpetual",
-    marginAsset: "USDT",
-    settlement: "Perpetual",
-    maxLeverage: null,
-    instId: null,
   };
 }
