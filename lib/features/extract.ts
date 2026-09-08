@@ -62,9 +62,10 @@ export const STATE_FEATURE_NAMES = [
   "h1_vwap_dist",
   "h1_range_pos",
   "h1_ret4",
-  // 4h
+  // 4h. No EMA200-derived feature here: at 4h it needs 3,200 base bars, far
+  // more than a live scan fetches, and a feature that is real in training but
+  // imputed at prediction time is train/serve skew.
   "h4_ema20_50",
-  "h4_ema50_200",
   "h4_rsi",
   "h4_macd_hist",
   "h4_adx",
@@ -392,11 +393,6 @@ export function extractStateFeatures(
         ? clip((h4.ema20[h4i]! - h4.ema50[h4i]!) / h4Atr, 10)
         : null,
     );
-    push(
-      h4.ema50[h4i] != null && h4.ema200[h4i] != null
-        ? clip((h4.ema50[h4i]! - h4.ema200[h4i]!) / h4Atr, 10)
-        : null,
-    );
     push(h4.rsi[h4i] != null ? (h4.rsi[h4i]! - 50) / 50 : null);
     push(h4.macdHist[h4i] != null ? clip(h4.macdHist[h4i]! / h4Atr, 6) : null);
     push(h4.adx[h4i] != null ? h4.adx[h4i]! / 100 : null);
@@ -407,7 +403,7 @@ export function extractStateFeatures(
     );
     push(retNormalised(h4, h4i, 4));
   } else {
-    for (let j = 0; j < 7; j += 1) push(null);
+    for (let j = 0; j < 6; j += 1) push(null);
   }
 
   // --- BTC / market regime ---
@@ -437,6 +433,11 @@ export function extractStateFeatures(
     for (let j = 0; j < 13; j += 1) push(null);
   }
 
+  // A miscount here would silently shift every downstream coefficient, so it is
+  // checked rather than trusted.
+  if (k !== STATE_FEATURE_COUNT) {
+    throw new Error(`Feature layout drift: wrote ${k}, expected ${STATE_FEATURE_COUNT}`);
+  }
   return out;
 }
 

@@ -9,7 +9,12 @@ export type OpportunityVerdict =
   | "WAIT FOR PULLBACK"
   | "NO ENTRY";
 
-export type EstimateBasis = "EMPIRICAL" | "BLENDED" | "MODEL";
+/**
+ * Where a probability came from. `LEARNED` is the trained cross-symbol model;
+ * the other three are the analytic/historical fallback used when no model is
+ * published or a symbol lacks the history the model needs.
+ */
+export type EstimateBasis = "LEARNED" | "EMPIRICAL" | "BLENDED" | "MODEL";
 
 /** One row of the "how long is it rational to hold" table. */
 export type HorizonEstimate = {
@@ -140,5 +145,7 @@ export type OpportunityScanResult = {
   btcRegime: BtcRegime;
   requested: number;
   evaluated: number;
+  /** Model that produced these probabilities, or null when none is published. */
+  modelVersion: string | null;
   updatedAt: string;
 };

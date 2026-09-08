@@ -92,8 +92,15 @@ export type WalkForwardFold = {
   calibration: Calibration;
 };
 
+/**
+ * `REACH` answers "did price touch the target at all within the window",
+ * independent of any stop. `TARGET` and `STOP` answer which barrier came first
+ * for a specific pair, which is the quantity a trade actually resolves on.
+ */
+export type OutcomeHead = "REACH" | "TARGET" | "STOP";
+
 export type OutcomeModel = {
-  outcome: "TARGET" | "STOP";
+  outcome: OutcomeHead;
   model: LogisticModel;
   calibration: Calibration;
   metrics: ModelMetrics;
@@ -102,6 +109,7 @@ export type OutcomeModel = {
 
 export type DirectionModel = {
   direction: PredictionDirection;
+  reach: OutcomeModel;
   target: OutcomeModel;
   stop: OutcomeModel;
 };

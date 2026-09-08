@@ -17,11 +17,22 @@ import {
   type FirstTouchSample,
   type VolatilityModel,
 } from "@/lib/scoring/first-passage";
+import { buildSymbolContext, type MarketContext } from "@/lib/features/extract";
+import { FEATURE_WARMUP_BARS } from "@/lib/features/feature-series";
+import {
+  buildLiveFeatures,
+  confidenceScore,
+  predictorFor,
+  REQUIRED_BARS,
+  type SymbolPredictor,
+} from "@/lib/model/predict";
 import type { BulkDerivativeStats } from "@/lib/market-data/bulk-derivatives";
 import type { Candle, TickerSnapshot } from "@/lib/types/market";
+import type { TrainedModel } from "@/lib/types/prediction";
 import type { CandleVenue } from "@/lib/types/venue";
 import type {
   BtcRegime,
+  EstimateBasis,
   HorizonEstimate,
   HoldingPlan,
   LeveragePlan,
@@ -46,7 +57,14 @@ import type {
  */
 
 export const BAR_MINUTES = 15;
-export const CANDLE_LIMIT = 300;
+/**
+ * 900 bars is set by the 4h feature block: EMA50 on 4h needs 50 closed 4h bars,
+ * which is 800 base bars, plus warmup headroom. Fetching less would leave those
+ * columns imputed at prediction time while they were real during training.
+ */
+export const CANDLE_LIMIT = 900;
+/** Below this the model's feature stack cannot be filled honestly. */
+const MODEL_MIN_CANDLES = FEATURE_WARMUP_BARS + 640;
 /** 60 warmup bars + 16 horizon bars + enough tail to weight. */
 const MIN_CANDLES = 140;
 const MIN_SAMPLES = 50;
@@ -361,6 +379,27 @@ type Estimator = {
   tilt: number;
 };
 
+/**
+ * The probability source, behind an interface.
+ *
+ * Two implementations exist. `learnedEngine` is the trained cross-symbol model:
+ * features in, calibrated first-passage probabilities out. `historicalEngine`
+ * is the original kernel-weighted historical scan blended with a random-walk
+ * model, and it still runs whenever no model is published or a symbol has too
+ * little history to feed one. Everything downstream -- stop selection, target
+ * selection, expected value, leverage, holding window -- is shared, so the two
+ * paths differ only in where the numbers come from.
+ */
+export type ProbabilityEngine = {
+  basis: EstimateBasis;
+  /** P(price travels `pct` in the favourable/adverse direction within `bars`). */
+  touch(pct: number, bars: number, favorable: boolean): number;
+  /** P(target first) and P(stop first) for a specific pair. */
+  pair(targetPct: number, stopPct: number, bars: number): { target: number; stop: number };
+  /** Features that moved the estimate, for the "why" panel. Empty when rule-based. */
+  drivers(targetPct: number, stopPct: number, bars: number): string[];
+};
+
 /** Blended probability of touching a grid distance inside `bars`. */
 function touchAt(
   estimator: Estimator,
@@ -424,6 +463,17 @@ function pairAt(
   return { target: target * scale, stop: stop * scale };
 }
 
+function historicalEngine(estimator: Estimator, isLong: boolean): ProbabilityEngine {
+  return {
+    basis: estimateBasis(estimator.lambda),
+    touch: (pct, bars, favorable) =>
+      touchAt(estimator, snapToGrid(pct).index, bars, isLong, favorable),
+    pair: (targetPct, stopPct, bars) =>
+      pairAt(estimator, snapToGrid(targetPct).index, snapToGrid(stopPct).index, bars, isLong),
+    drivers: () => [],
+  };
+}
+
 /** Weighted mean close-to-close result at a horizon, in the trade's direction. */
 function driftAt(estimator: Estimator, horizonIndex: number, isLong: boolean): number {
   let weighted = 0;
@@ -446,11 +496,12 @@ function evaluateSide(input: {
   direction: OpportunityDirection;
   state: MarketState;
   estimator: Estimator;
+  engine: ProbabilityEngine;
   regime: BtcRegime;
   confidence: number;
   tiltReasons: string[];
 }): OpportunitySide | null {
-  const { direction, state, estimator, regime, confidence } = input;
+  const { direction, state, estimator, engine, regime, confidence } = input;
   const isLong = direction === "LONG";
   const stops = stopCandidates(direction, state);
   if (stops.length === 0) return null;
@@ -480,13 +531,7 @@ function evaluateSide(input: {
     if (target.value <= stop.pct) return null;
     const spec = HORIZON_SPECS[horizonIndex];
     const hours = spec.minutes / 60;
-    const { target: pTarget, stop: pStop } = pairAt(
-      estimator,
-      target.index,
-      snapToGrid(stop.pct).index,
-      spec.bars,
-      isLong,
-    );
+    const { target: pTarget, stop: pStop } = engine.pair(target.value, stop.pct, spec.bars);
     const pNeither = clamp(1 - pTarget - pStop, 0, 1);
     // Unresolved paths are marked to the modeled close, bounded by the barriers.
     const openResult = clamp(driftCache[horizonIndex], -stop.pct, target.value);
@@ -588,9 +633,8 @@ function evaluateSide(input: {
       recommended: choice.targetPct === best.targetPct,
     }));
 
-  const stopGridIndex = snapToGrid(stop.pct).index;
   const rawFavorable = HORIZON_SPECS.map((horizon) =>
-    touchAt(estimator, snapToGrid(horizon.levelPct).index, horizon.bars, isLong, true),
+    engine.touch(horizon.levelPct, horizon.bars, true),
   );
   const horizons: HorizonEstimate[] = HORIZON_SPECS.map((horizon, index) => {
     const hours = horizon.minutes / 60;
@@ -600,14 +644,10 @@ function evaluateSide(input: {
       minutes: horizon.minutes,
       levelPct: horizon.levelPct,
       probability: clamp(rawFavorable[index] * 100, 0, 100),
-      stopProbability: clamp(
-        touchAt(estimator, stopGridIndex, horizon.bars, isLong, false) * 100,
-        0,
-        100,
-      ),
+      stopProbability: clamp(engine.touch(stop.pct, horizon.bars, false) * 100, 0, 100),
       expectedValuePct: choice?.ev ?? 0,
       expectedValuePerHourPct: choice ? choice.ev / hours : 0,
-      basis: estimateBasis(estimator.lambda),
+      basis: engine.basis,
       recommended: index === best.horizonIndex,
     };
   });
@@ -683,10 +723,12 @@ function evaluateSide(input: {
     return { minMinutes, maxMinutes, label: minutesLabel(minMinutes, maxMinutes) };
   })();
 
+  const drivers = engine.drivers(best.targetPct, stop.pct, spec.bars);
   const reasons = [
     `${spec.label}保有・TP +${best.targetPct}% / SL -${stop.pct}% が時間当たり期待値で最良`,
     `SL根拠: ${stop.reason}`,
-    ...input.tiltReasons.slice(0, 4),
+    ...drivers,
+    ...input.tiltReasons.slice(0, drivers.length ? 2 : 4),
   ];
 
   return {
@@ -712,9 +754,99 @@ function evaluateSide(input: {
     costPct: best.cost,
     chaseRisk,
     confidence,
-    basis: estimateBasis(estimator.lambda),
+    basis: engine.basis,
     reasons,
     warnings,
+  };
+}
+
+/** Readable Japanese labels for the model's own feature names. */
+const FEATURE_LABELS: Record<string, string> = {
+  f15_ema20_dist: "15m EMA20との乖離",
+  f15_ema50_dist: "15m EMA50との乖離",
+  f15_ema200_dist: "15m EMA200との乖離",
+  f15_ema20_50: "15m 短期EMA傾き",
+  f15_ema50_200: "15m 中期EMA傾き",
+  f15_rsi: "15m RSI水準",
+  f15_rsi_delta: "15m RSI変化",
+  f15_macd_hist: "15m MACDヒストグラム",
+  f15_macd_line: "15m MACD",
+  f15_adx: "15m ADX(トレンド強度)",
+  f15_di_diff: "15m 方向性(+DI/-DI差)",
+  f15_atr_regime: "15m ボラティリティ水準",
+  f15_bb_width: "15m BB幅",
+  f15_percent_b: "15m BB内位置",
+  f15_vwap_dist: "15m VWAP乖離",
+  f15_volume_z: "15m 出来高z-score",
+  f15_volume_ratio: "15m 出来高比",
+  f15_structure: "15m 高値安値構造",
+  f15_range_pos: "24時間レンジ内位置",
+  f15_res_dist: "上値抵抗までの距離",
+  f15_sup_dist: "下値支持までの距離",
+  f15_ret1: "直近15分リターン",
+  f15_ret2: "直近30分リターン",
+  f15_ret4: "直近1時間リターン",
+  f15_ret8: "直近2時間リターン",
+  f15_ret16: "直近4時間リターン",
+  f15_cvd_delta4: "1時間CVD",
+  f15_cvd_delta16: "4時間CVD",
+  f15_cvd_available: "CVD取得可否",
+  h1_ema20_dist: "1h EMA20乖離",
+  h1_ema20_50: "1h 短期EMA傾き",
+  h1_ema50_200: "1h 中期EMA傾き",
+  h1_rsi: "1h RSI",
+  h1_macd_hist: "1h MACD",
+  h1_adx: "1h ADX",
+  h1_di_diff: "1h 方向性",
+  h1_atr_regime: "1h ボラティリティ",
+  h1_percent_b: "1h BB内位置",
+  h1_vwap_dist: "1h VWAP乖離",
+  h1_range_pos: "1h レンジ内位置",
+  h1_ret4: "1h 4本リターン",
+  h4_ema20_50: "4h EMA傾き",
+  h4_rsi: "4h RSI",
+  h4_macd_hist: "4h MACD",
+  h4_adx: "4h ADX",
+  h4_di_diff: "4h 方向性",
+  h4_ret4: "4h リターン",
+  btc_ret4: "BTC 1時間リターン",
+  btc_ret16: "BTC 4時間リターン",
+  btc_ret96: "BTC 24時間リターン",
+  btc_rsi: "BTC RSI",
+  btc_trend: "BTC トレンド",
+  btc_atr_regime: "BTC ボラティリティ",
+  corr_btc: "BTCとの相関",
+  regime_bull: "Regime: BULL",
+  regime_bear: "Regime: BEAR",
+  regime_highvol: "Regime: 高ボラ",
+  regime_lowvol: "Regime: 低ボラ",
+  regime_panic: "Regime: PANIC",
+  regime_recovery: "Regime: RECOVERY",
+  bar_target_sigma: "TPまでの距離(σ換算)",
+  bar_stop_sigma: "SLまでの距離(σ換算)",
+  bar_log_horizon: "保有時間",
+  bar_target_over_stop: "TP/SL比",
+  bar_prior_target: "TP到達の解析近似",
+  bar_prior_stop: "SL到達の解析近似",
+};
+
+function learnedEngine(predictor: SymbolPredictor): ProbabilityEngine {
+  return {
+    basis: "LEARNED",
+    touch: (pct, bars, favorable) =>
+      favorable ? predictor.reach(pct, bars) : predictor.adverseReach(pct, bars),
+    pair: (targetPct, stopPct, bars) => predictor.pair(targetPct, stopPct, bars),
+    drivers: (targetPct, stopPct, bars) =>
+      predictor
+        .why(targetPct, stopPct, bars, 5)
+        // Barrier geometry always dominates the logit and says nothing about the
+        // market, so the "why" list shows only state features.
+        .filter((entry) => !entry.name.startsWith("bar_"))
+        .slice(0, 4)
+        .map(
+          (entry) =>
+            `${entry.contribution >= 0 ? "+" : "-"} ${FEATURE_LABELS[entry.name] ?? entry.name}`,
+        ),
   };
 }
 
@@ -727,6 +859,10 @@ export type OpportunityInput = {
   derivatives: BulkDerivativeStats | null;
   regime: BtcRegime;
   turnoverUsd: number | null;
+  /** Trained model. When absent the historical engine runs instead. */
+  model?: TrainedModel | null;
+  /** BTC feature context, required for the model's market-regime features. */
+  market?: MarketContext | null;
 };
 
 export type OpportunityOutcome =
@@ -794,25 +930,59 @@ export function evaluateOpportunity(input: OpportunityInput): OpportunityOutcome
     isBtc: input.symbol.startsWith("BTC"),
   };
 
-  const confidence = Math.round(
-    clamp(
-      Math.min(100, ess * 2.5) * 0.45 +
-        Math.min(100, (samples.length / 200) * 100) * 0.2 +
-        (fundingRatePct != null ? 100 : 0) * 0.12 +
-        (input.derivatives?.openInterestUsd != null ? 100 : 0) * 0.08 +
-        (state.orderFlow != null ? 100 : 0) * 0.05 +
-        (input.turnoverUsd != null && input.turnoverUsd >= 5_000_000 ? 100 : 40) * 0.1,
-      0,
-      100,
-    ),
-  );
+  // The trained model needs its full causal feature stack; when the symbol has
+  // too little history, or no model is published, the historical engine covers
+  // the row rather than dropping it.
+  const live =
+    input.model && candles.length >= MODEL_MIN_CANDLES
+      ? (() => {
+          try {
+            const context = buildSymbolContext(input.symbol, candles);
+            return buildLiveFeatures(context, input.market ?? null);
+          } catch {
+            return null;
+          }
+        })()
+      : null;
+
+  const confidence = live
+    ? confidenceScore({
+        model: input.model!,
+        direction: "LONG",
+        barsAvailable: candles.length,
+        requiredBars: REQUIRED_BARS,
+        turnoverUsd: input.turnoverUsd,
+        hasFunding: fundingRatePct != null,
+        hasOrderFlow: state.orderFlow != null,
+        hasBtcContext: input.market != null,
+        regimeStable: input.regime.state !== "RISK_OFF",
+        modelDisagreement: 0,
+      }).score
+    : Math.round(
+        clamp(
+          Math.min(100, ess * 2.5) * 0.45 +
+            Math.min(100, (samples.length / 200) * 100) * 0.2 +
+            (fundingRatePct != null ? 100 : 0) * 0.12 +
+            (input.derivatives?.openInterestUsd != null ? 100 : 0) * 0.08 +
+            (state.orderFlow != null ? 100 : 0) * 0.05 +
+            (input.turnoverUsd != null && input.turnoverUsd >= 5_000_000 ? 100 : 40) * 0.1,
+          0,
+          100,
+        ),
+      );
 
   const sides = (["LONG", "SHORT"] as const).map((direction) => {
     const { total: tilt, reasons } = buildTilt(direction, state, input.regime);
+    const estimator = { samples, weightTotal, lambda, model, tilt };
+    const engine =
+      live && input.model
+        ? learnedEngine(predictorFor(input.model, direction, live))
+        : historicalEngine(estimator, direction === "LONG");
     return evaluateSide({
       direction,
       state,
-      estimator: { samples, weightTotal, lambda, model, tilt },
+      estimator,
+      engine,
       regime: input.regime,
       confidence,
       tiltReasons: reasons,
@@ -824,6 +994,14 @@ export function evaluateOpportunity(input: OpportunityInput): OpportunityOutcome
   const notes: string[] = [];
   if (state.orderFlow == null) notes.push("この取引所はTaker出来高を返さないためOrder Flowは未使用");
   if (fundingRatePct == null) notes.push("Funding取得不可");
+  if (input.model && !live) {
+    notes.push(
+      candles.length < MODEL_MIN_CANDLES
+        ? `15m足が${candles.length}本で学習モデルの必要本数(${MODEL_MIN_CANDLES})に届かず、履歴ベース推定にフォールバック`
+        : "特徴量を生成できず履歴ベース推定にフォールバック",
+    );
+  }
+  if (!input.model) notes.push("学習モデル未公開のため履歴ベース推定を使用");
 
   const bestDirection: OpportunityDirection | null =
     long && short

@@ -1,6 +1,9 @@
 import { loadUniverse } from "@/lib/analysis/universe";
 import { CANDLE_LIMIT, evaluateOpportunity } from "@/lib/analysis/opportunity";
+import { buildMarketContext, type MarketContext } from "@/lib/features/extract";
+import { readActiveModel } from "@/lib/server/model-store";
 import { loadBulkDerivatives, type BulkDerivativeStats } from "@/lib/market-data/bulk-derivatives";
+import type { TrainedModel } from "@/lib/types/prediction";
 import { fetchVenueOhlcv } from "@/lib/market-data/venue-router";
 import { emaSeries } from "@/lib/indicators";
 import { mapPool } from "@/lib/util/pool";
@@ -14,11 +17,19 @@ import type {
 } from "@/lib/types/opportunity";
 import type { CandleVenue } from "@/lib/types/venue";
 
-/** Symbols per request. One candle request each, so this bounds the Worker budget. */
-export const MAX_BATCH = 24;
+/**
+ * Symbols per request. One candle request each, so this bounds the Worker
+ * budget. Lowered from 24 when the candle depth went to 900 bars, which roughly
+ * tripled the payload each symbol brings back.
+ */
+export const MAX_BATCH = 16;
 const CANDLE_CONCURRENCY = 6;
 const REGIME_CACHE_KEY = "opportunity-btc-regime-v1";
 const REGIME_CACHE_MS = 90_000;
+const BTC_CONTEXT_CACHE_KEY = "opportunity-btc-features-v1";
+const BTC_CONTEXT_CACHE_MS = 90_000;
+const MODEL_CACHE_KEY = "opportunity-active-model-v1";
+const MODEL_CACHE_MS = 300_000;
 
 export type OpportunityCandidate = {
   symbol: string;
@@ -109,6 +120,38 @@ export async function loadBtcRegime(venue: CandleVenue | null): Promise<BtcRegim
   }
 }
 
+/**
+ * BTC feature context for the model's market-regime columns.
+ *
+ * Fetched once per scan and cached, because every symbol in the universe reads
+ * the same BTC bars. Aligning is by candle open time, so a symbol whose venue
+ * timestamps differ simply falls back to the neutral regime encoding.
+ */
+async function loadBtcContext(venue: CandleVenue | null): Promise<MarketContext | null> {
+  const cached = getTtlCache<MarketContext>(BTC_CONTEXT_CACHE_KEY);
+  if (cached) return cached;
+  if (!venue) return null;
+  try {
+    const candles = await fetchVenueOhlcv(venue, "BTCUSDT", "15m", CANDLE_LIMIT);
+    if (candles.length < 300) return null;
+    return setTtlCache(BTC_CONTEXT_CACHE_KEY, buildMarketContext(candles), BTC_CONTEXT_CACHE_MS);
+  } catch {
+    return null;
+  }
+}
+
+/** Active model, cached in-process so a paginated scan reads KV once. */
+async function loadModel(): Promise<TrainedModel | null> {
+  const cached = getTtlCache<{ model: TrainedModel | null }>(MODEL_CACHE_KEY);
+  if (cached) return cached.model;
+  try {
+    const model = await readActiveModel();
+    return setTtlCache(MODEL_CACHE_KEY, { model }, MODEL_CACHE_MS).model;
+  } catch {
+    return null;
+  }
+}
+
 export type ScanRequest = {
   offset?: number;
   limit?: number;
@@ -129,10 +172,12 @@ export async function scanOpportunities(request: ScanRequest = {}): Promise<Oppo
   const limit = Math.min(Math.max(Math.floor(request.limit ?? MAX_BATCH), 1), MAX_BATCH);
   const slice = candidates.slice(offset, offset + limit);
 
-  const [derivatives, regime, universe] = await Promise.all([
+  const [derivatives, regime, universe, market, model] = await Promise.all([
     loadBulkDerivatives().catch(() => new Map<string, BulkDerivativeStats>()),
     loadBtcRegime(candidates[0]?.venue ?? null),
     loadUniverse(),
+    loadBtcContext(candidates[0]?.venue ?? null),
+    loadModel(),
   ]);
 
   const rows: OpportunityRow[] = [];
@@ -155,6 +200,8 @@ export async function scanOpportunities(request: ScanRequest = {}): Promise<Oppo
         derivatives: derivatives.get(candidate.symbol) ?? null,
         regime,
         turnoverUsd: candidate.turnoverUsd,
+        model,
+        market,
       });
       if (outcome.ok) rows.push(outcome.row);
       else excluded.push({ symbol: candidate.symbol, reason: outcome.reason });
@@ -174,6 +221,7 @@ export async function scanOpportunities(request: ScanRequest = {}): Promise<Oppo
     evaluated: rows.length,
     offset,
     total: candidates.length,
+    modelVersion: model?.version ?? null,
     updatedAt: new Date().toISOString(),
   };
 }

@@ -3,6 +3,7 @@ import { fetchBinanceOhlcvHistory } from "@/lib/market-data/binance";
 import { mapPool } from "@/lib/util/pool";
 import type {
   DirectionModel,
+  OutcomeHead,
   OutcomeModel,
   PredictionDirection,
   TrainedModel,
@@ -58,16 +59,18 @@ export const TRAIN_LIMITS = {
   maxIterations: 400,
 };
 
-function splitLabels(rows: LabelledRow[], outcome: "TARGET" | "STOP"): Uint8Array {
+function splitLabels(rows: LabelledRow[], outcome: OutcomeHead): Uint8Array {
   const labels = new Uint8Array(rows.length);
   for (let i = 0; i < rows.length; i += 1) {
-    labels[i] = outcome === "TARGET" ? rows[i].targetFirst : rows[i].stopFirst;
+    const row = rows[i];
+    labels[i] =
+      outcome === "TARGET" ? row.targetFirst : outcome === "STOP" ? row.stopFirst : row.targetTouched;
   }
   return labels;
 }
 
-function priors(rows: LabelledRow[], outcome: "TARGET" | "STOP"): number[] {
-  return rows.map((row) => (outcome === "TARGET" ? row.priorTarget : row.priorStop));
+function priors(rows: LabelledRow[], outcome: OutcomeHead): number[] {
+  return rows.map((row) => (outcome === "STOP" ? row.priorStop : row.priorTarget));
 }
 
 /**
@@ -80,7 +83,7 @@ function priors(rows: LabelledRow[], outcome: "TARGET" | "STOP"): number[] {
  */
 function trainOutcome(
   rows: LabelledRow[],
-  outcome: "TARGET" | "STOP",
+  outcome: OutcomeHead,
   options: TrainOptions,
 ): OutcomeModel {
   const cut = Math.max(1, Math.floor(rows.length * 0.8));
@@ -120,7 +123,7 @@ function trainOutcome(
  */
 function walkForward(
   rows: LabelledRow[],
-  outcome: "TARGET" | "STOP",
+  outcome: OutcomeHead,
   folds: number,
   options: TrainOptions,
 ): WalkForwardFold[] {
@@ -170,6 +173,7 @@ function trainDirection(
 ): DirectionModel {
   return {
     direction,
+    reach: trainOutcome(rows, "REACH", options),
     target: trainOutcome(rows, "TARGET", options),
     stop: trainOutcome(rows, "STOP", options),
   };

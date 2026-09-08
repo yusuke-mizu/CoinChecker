@@ -25,6 +25,8 @@ export type LabelledRow = {
   features: Float64Array;
   targetFirst: 0 | 1;
   stopFirst: 0 | 1;
+  /** Target touched at any point in the window, regardless of the stop. */
+  targetTouched: 0 | 1;
   priorTarget: number;
   priorStop: number;
   ambiguous: boolean;
@@ -54,24 +56,47 @@ export function resolveFirstTouch(
   targetPct: number,
   stopPct: number,
   bars: number,
-): { outcome: TouchOutcome; ambiguous: boolean; barsToOutcome: number } {
+): { outcome: TouchOutcome; ambiguous: boolean; barsToOutcome: number; touched: boolean } {
   const long = direction === "LONG";
   const targetLevel = long
     ? entryPrice * (1 + targetPct / 100)
     : entryPrice * (1 - targetPct / 100);
   const stopLevel = long ? entryPrice * (1 - stopPct / 100) : entryPrice * (1 + stopPct / 100);
 
+  // One pass records both first-touch bars; the ordering is derived afterwards
+  // so `touched` can still report a target reached after the stop was taken.
+  let firstTarget = -1;
+  let firstStop = -1;
   for (let j = 1; j <= bars; j += 1) {
     const index = entryIndex + j;
     const high = highs[index];
     const low = lows[index];
-    const hitTarget = long ? high >= targetLevel : low <= targetLevel;
-    const hitStop = long ? low <= stopLevel : high >= stopLevel;
-    if (hitTarget && hitStop) return { outcome: "STOP", ambiguous: true, barsToOutcome: j };
-    if (hitStop) return { outcome: "STOP", ambiguous: false, barsToOutcome: j };
-    if (hitTarget) return { outcome: "TARGET", ambiguous: false, barsToOutcome: j };
+    if (firstTarget < 0 && (long ? high >= targetLevel : low <= targetLevel)) firstTarget = j;
+    if (firstStop < 0 && (long ? low <= stopLevel : high >= stopLevel)) firstStop = j;
+    if (firstTarget >= 0 && firstStop >= 0) break;
   }
-  return { outcome: "NEITHER", ambiguous: false, barsToOutcome: bars };
+
+  const touched = firstTarget >= 0;
+  if (firstTarget < 0 && firstStop < 0) {
+    return { outcome: "NEITHER", ambiguous: false, barsToOutcome: bars, touched };
+  }
+  if (firstStop < 0) {
+    return { outcome: "TARGET", ambiguous: false, barsToOutcome: firstTarget, touched };
+  }
+  if (firstTarget < 0) {
+    return { outcome: "STOP", ambiguous: false, barsToOutcome: firstStop, touched };
+  }
+  if (firstTarget < firstStop) {
+    return { outcome: "TARGET", ambiguous: false, barsToOutcome: firstTarget, touched };
+  }
+  // Equal bars means the same candle reached both. Unresolvable from OHLC, so
+  // it is booked as a stop.
+  return {
+    outcome: "STOP",
+    ambiguous: firstTarget === firstStop,
+    barsToOutcome: firstStop,
+    touched,
+  };
 }
 
 /** Maximum favourable / adverse excursion over a window, in percent. */
@@ -193,6 +218,7 @@ export function buildSymbolDataset(
         features,
         targetFirst: resolved.outcome === "TARGET" ? 1 : 0,
         stopFirst: resolved.outcome === "STOP" ? 1 : 0,
+        targetTouched: resolved.touched ? 1 : 0,
         priorTarget: priors.priorTarget,
         priorStop: priors.priorStop,
         ambiguous: resolved.ambiguous,
