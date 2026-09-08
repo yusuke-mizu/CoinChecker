@@ -123,6 +123,7 @@ export async function fetchBybitTickers(): Promise<Record<string, TickerSnapshot
         highPrice24h?: string;
         lowPrice24h?: string;
         volume24h?: string;
+        turnover24h?: string;
       }>;
     }>
   >("https://api.bybit.com/v5/market/tickers?category=linear", {
@@ -144,6 +145,7 @@ export async function fetchBybitTickers(): Promise<Record<string, TickerSnapshot
       high24h: num(row.highPrice24h),
       low24h: num(row.lowPrice24h),
       volume24h: num(row.volume24h),
+      quoteVolume24h: num(row.turnover24h),
     };
   }
   return out;

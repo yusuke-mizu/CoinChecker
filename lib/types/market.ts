@@ -18,6 +18,8 @@ export type TickerSnapshot = {
   high24h: number | null;
   low24h: number | null;
   volume24h: number | null;
+  /** Venue-native 24h quote turnover, normalized for cross-symbol liquidity ranking. */
+  quoteVolume24h?: number | null;
 };
 
 export type AvailabilityStage =

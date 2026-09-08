@@ -28,23 +28,11 @@ export function NewEntryPanel({
         timing == null ||
         entry < settings.watchEntryThreshold
       ) return [];
-      const configuredDecision = plan.structureBeyondHardStop
-        ? "NO ENTRY"
-        : plan.entryLocation.startsWith("CHASE")
-          ? "WAIT FOR PULLBACK"
-          : plan.breakoutStatus === "WAITING" && assessment.decision === "WAIT_FOR_BREAKOUT"
-            ? "WAIT FOR BREAKOUT"
-            : entry >= settings.strongEntryThreshold &&
-            assessment.expectedMoveScore >= 65 &&
-            timing >= settings.timingThreshold &&
-            assessment.reversalRisk <= 35 &&
-            plan.rewardRisk >= 2 &&
-            row.dataQuality.score >= 60 &&
-            plan.entryLocation === "ENTRY NOW / GOOD LOCATION"
-              ? "ENTRY NOW"
-              : entry >= settings.watchEntryThreshold
-                ? "ENTRY WATCH"
-                : "NO ENTRY";
+      const configuredDecision =
+        plan.entryVerdict === "ENTRY NOW" &&
+        (entry < settings.strongEntryThreshold || timing < settings.timingThreshold)
+          ? "ENTRY WATCH"
+          : plan.entryVerdict;
       return [{ row, direction, entry, timing, assessment, plan, configuredDecision }];
     })
     .sort((a, b) => b.entry - a.entry || b.timing - a.timing)
@@ -84,7 +72,11 @@ export function NewEntryPanel({
               {" "}· {assessment.entryType} · {configuredDecision}
             </span>
             <span className="mt-1 block text-[10px] text-zinc-500">
-              {plan.entryLocation} · {plan.riskTier} · Compounding {plan.compoundingQuality}
+              SL {plan.levels.stopLossPct.toFixed(2)}% · TP1 {plan.levels.target1Pct.toFixed(2)}%
+              {" "}· Lev {plan.leverage.min}〜{plan.leverage.max}x · {plan.holdingWindow}
+            </span>
+            <span className="mt-1 block text-[10px] text-zinc-500">
+              {plan.riskTier} · Confidence {plan.confidenceScore} · Compounding {plan.compoundingQuality}
             </span>
             {assessment.lateEntryWarning ? (
               <span className="mt-1 block text-[10px] text-amber-300">

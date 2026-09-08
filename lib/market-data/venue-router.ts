@@ -128,6 +128,7 @@ export async function fetchMergedTickers(): Promise<Record<string, TickerSnapsho
 export async function fetchSourcedTickers(): Promise<{
   tickers: Record<string, TickerSnapshot>;
   sources: Record<string, SourceAttribution>;
+  byVenue: Record<CandleVenue, Record<string, TickerSnapshot>>;
 }> {
   const [okx, bybit, binance] = await Promise.all([
     fetchOkxSwapTickers().catch(() => ({}) as Record<string, TickerSnapshot>),
@@ -139,7 +140,7 @@ export async function fetchSourcedTickers(): Promise<{
   for (const symbol of Object.keys(binance)) sources[symbol] = sourceForVenue("binance", "ticker");
   for (const symbol of Object.keys(bybit)) sources[symbol] = sourceForVenue("bybit", "ticker");
   for (const symbol of Object.keys(okx)) sources[symbol] = sourceForVenue("okx", "ticker");
-  return { tickers, sources };
+  return { tickers, sources, byVenue: { okx, bybit, binance } };
 }
 
 export async function fetchVenueOhlcv(

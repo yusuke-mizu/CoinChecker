@@ -90,5 +90,93 @@ describe("buildTradePlan", () => {
     expect(plan.pressureState).toBe("OVERHEATED");
     expect(plan.structureBeyondHardStop).toBe(true);
     expect(plan.riskTier).toBe("HIGH RISK");
+    expect(plan.entryVerdict).toBe("NO ENTRY");
+  });
+
+  it("derives recommended stop and staged targets from the executable entry", () => {
+    const plan = buildTradePlan({
+      assessment,
+      candles: { "1h": candles, "15m": candles },
+      indicators: {},
+      futures: null,
+      dataQuality: 90,
+      confidence: "HIGH",
+      hardStopPct: 10,
+    });
+
+    expect(plan.levels.stopLoss).toBe(plan.invalidationLevel);
+    // Structure stop drives the recommendation; hard stop only caps the loss.
+    expect(plan.levels.stopLossPct).toBeLessThan(plan.hardStopPct);
+    expect(plan.levels.target1Pct).toBeLessThan(plan.levels.target2Pct);
+    expect(plan.levels.rewardRisk).toBeCloseTo(
+      plan.levels.target1Pct / plan.levels.stopLossPct,
+      6,
+    );
+  });
+
+  it("scales leverage down as volatility rises", () => {
+    const calm = buildTradePlan({
+      assessment,
+      candles: { "1h": candles, "15m": candles },
+      indicators: {},
+      futures: null,
+      dataQuality: 90,
+      confidence: "HIGH",
+    });
+    const volatile = buildTradePlan({
+      assessment: { ...assessment, atrPct: 7, volatilityPct: 9, structuralStopPrice: 93 },
+      candles: { "1h": candles, "15m": candles },
+      indicators: {},
+      futures: null,
+      dataQuality: 90,
+      confidence: "HIGH",
+    });
+
+    expect(volatile.riskTier).toBe("EXTREME RISK");
+    expect(volatile.leverage.max).toBeLessThan(calm.leverage.max);
+    expect(calm.leverage.marginLossAtStopPct).toBeLessThanOrEqual(12);
+  });
+
+  it("rejects setups whose first target does not clear the stop", () => {
+    const plan = buildTradePlan({
+      assessment: {
+        ...assessment,
+        targetPrice: 100.3,
+        structuralStopPrice: 94,
+        potentialRewardPct: 0.3,
+      },
+      candles: { "1h": candles, "15m": candles },
+      indicators: {},
+      futures: null,
+      dataQuality: 90,
+      confidence: "HIGH",
+    });
+
+    expect(plan.levels.rewardRisk).toBeLessThan(1);
+    expect(plan.entryVerdict).toBe("NO ENTRY / POOR R:R");
+  });
+
+  it("recommends a shorter hold when expected move is reached quickly", () => {
+    const fast = buildTradePlan({
+      assessment: { ...assessment, atrPct: 3 },
+      candles: { "1h": candles, "15m": candles },
+      indicators: {},
+      futures: null,
+      dataQuality: 90,
+      confidence: "HIGH",
+    });
+    const slow = buildTradePlan({
+      assessment: { ...assessment, atrPct: 0.3 },
+      candles: { "1h": candles, "15m": candles },
+      indicators: {},
+      futures: null,
+      dataQuality: 90,
+      confidence: "HIGH",
+    });
+
+    const order = ["5-15m", "15-30m", "30m-1h", "1-2h", "2-4h", "4-12h", "12-24h"];
+    expect(order.indexOf(fast.holdingWindow)).toBeLessThanOrEqual(
+      order.indexOf(slow.holdingWindow),
+    );
   });
 });

@@ -97,6 +97,7 @@ export async function fetchBinanceTickers(): Promise<Record<string, TickerSnapsh
       highPrice?: string;
       lowPrice?: string;
       volume?: string;
+      quoteVolume?: string;
     }>
   >("https://fapi.binance.com/fapi/v1/ticker/24hr", { timeoutMs: 10_000, retries: 1 });
   const out: Record<string, TickerSnapshot> = {};
@@ -109,6 +110,7 @@ export async function fetchBinanceTickers(): Promise<Record<string, TickerSnapsh
       high24h: num(row.highPrice),
       low24h: num(row.lowPrice),
       volume24h: num(row.volume),
+      quoteVolume24h: num(row.quoteVolume),
     };
   }
   return out;

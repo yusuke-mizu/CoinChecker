@@ -14,6 +14,7 @@ import {
 import type { BtccCandidate, TickerSnapshot, PerpetualContract } from "@/lib/types/market";
 import type { CandleVenue } from "@/lib/types/venue";
 import type { SignalSettings as SignalSettingsType, TrackedSignal } from "@/lib/types/signals";
+import type { ScreenResult } from "@/lib/types/screening";
 import type {
   MarketEnvSnapshot,
   MarketRisk,
@@ -47,6 +48,27 @@ import {
 
 // Keep each Worker request below the upstream rate-limit and timeout budget.
 const BATCH_SIZE = 3;
+// Phase 2 depth. Screening watches every candidate; only these get full analysis.
+const DETAIL_TARGETS = 25;
+
+type ScanStage =
+  | "idle"
+  | "discovering"
+  | "screening"
+  | "analyzing"
+  | "signals"
+  | "complete"
+  | "cancelled";
+
+const STAGE_LABEL: Record<ScanStage, string> = {
+  idle: "待機中",
+  discovering: "銘柄ディスカバリー",
+  screening: "Phase 1 軽量スクリーニング",
+  analyzing: "Phase 2 詳細分析",
+  signals: "Signal Tracking 更新",
+  complete: "完了",
+  cancelled: "中断",
+};
 const REFRESH_OPTIONS = [
   { label: "OFF", value: 0 },
   { label: "5分", value: 5 },
@@ -127,6 +149,8 @@ export function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [stage, setStage] = useState<ScanStage>("idle");
+  const [screen, setScreen] = useState<ScreenResult | null>(null);
   const [rows, setRows] = useState<SymbolAnalysis[]>([]);
   const [market, setMarket] = useState<MarketEnvSnapshot | null>(null);
   const [query, setQuery] = useState("");
@@ -261,6 +285,7 @@ export function Dashboard() {
     setRows([]);
     setSelected(null);
     setProgress({ done: 0, total: 1 });
+    setStage("discovering");
     try {
       // BTC-only must not wait for the paginated BTCC universe.
       const response = await fetch("/api/market-env");
@@ -273,10 +298,13 @@ export function Dashboard() {
       setMarket(json);
       setRows([json.btc]);
       setSelected(json.btc);
+      setScreen(null);
       setProgress({ done: 1, total: 1 });
+      setStage("complete");
       setUpdatedAt(new Date().toISOString());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      setStage("idle");
     } finally {
       runningRef.current = false;
       setLoading(false);
@@ -291,6 +319,7 @@ export function Dashboard() {
     setError(null);
     setWarning(null);
     setProgress({ done: 0, total: 0 });
+    setStage("discovering");
     try {
       const [universeRes, envRes] = await Promise.all([
         fetch("/api/universe"),
@@ -331,9 +360,41 @@ export function Dashboard() {
       const candidateBySymbol = new Map(
         (universe.candidates ?? []).map((candidate) => [candidate.symbol, candidate]),
       );
+
+      // Phase 1: rank every discovered candidate with lightweight data before
+      // spending the expensive multi-timeframe budget.
+      setStage("screening");
+      let screened: ScreenResult | null = null;
+      try {
+        const screenRes = await fetch("/api/screen", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ detailSize: DETAIL_TARGETS }),
+        });
+        const screenJson = await readApiJson<ScreenResult & { error?: string }>(
+          screenRes,
+          "POST /api/screen",
+        );
+        if (!screenRes.ok) throw new Error(screenJson.error || "軽量スクリーニングに失敗しました");
+        screened = screenJson;
+        setScreen(screenJson);
+      } catch (screenError) {
+        setWarning(
+          `軽量スクリーニングを実行できず、流動性順の候補で継続します: ${
+            screenError instanceof Error ? screenError.message : String(screenError)
+          }`,
+        );
+      }
+
+      const shortlist = screened?.detailCandidates ?? universe.symbols.slice(0, DETAIL_TARGETS);
+      // Tracked signals must keep updating even if they drop out of the shortlist.
+      const detailTargets = [...new Set([...shortlist, ...trackedSymbols])].filter(
+        (symbol) => venues[symbol],
+      );
       const listedOnly = symbols.filter((s) => !venues[s]);
-      const toScore = symbols.filter((s) => venues[s]);
-      setProgress({ done: 0, total: symbols.length });
+      const toScore = detailTargets;
+      setStage("analyzing");
+      setProgress({ done: 0, total: listedOnly.length + toScore.length });
       const collected: SymbolAnalysis[] = listedOnly.map((symbol) =>
         listedWithoutPublicPerp(
           symbol,
@@ -342,7 +403,7 @@ export function Dashboard() {
         ),
       );
       setRows([...collected]);
-      setProgress({ done: collected.length, total: symbols.length });
+      setProgress({ done: collected.length, total: listedOnly.length + toScore.length });
       for (let i = 0; i < toScore.length; i += BATCH_SIZE) {
         if (abortRef.current) break;
         const batch = toScore.slice(i, i + BATCH_SIZE);
@@ -401,10 +462,11 @@ export function Dashboard() {
           );
         }
         setRows([...collected]);
-        setProgress({ done: collected.length, total: symbols.length });
-        if (i + BATCH_SIZE < symbols.length) await sleep(350);
+        setProgress({ done: collected.length, total: listedOnly.length + toScore.length });
+        if (i + BATCH_SIZE < toScore.length) await sleep(350);
       }
       if (!abortRef.current) {
+        setStage("signals");
         const observations = collected.flatMap((row) =>
           (["LONG", "SHORT"] as const)
             .map((direction) => toSignalObservation(row, env, direction))
@@ -431,8 +493,10 @@ export function Dashboard() {
         }
         setUpdatedAt(new Date().toISOString());
       }
+      setStage(abortRef.current ? "cancelled" : "complete");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      setStage("idle");
     } finally {
       runningRef.current = false;
       setLoading(false);
@@ -555,7 +619,8 @@ export function Dashboard() {
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-5 py-4 text-sm text-zinc-300">
           <div className="flex items-center justify-between gap-3">
             <span>
-              バッチ分析中 {progress.done} / {progress.total || "—"}（1銘柄の失敗で全体は止めません）
+              {STAGE_LABEL[stage]} {progress.done} / {progress.total || "—"}
+              （1銘柄の失敗で全体は止めません）
             </span>
             <span className="font-mono text-xs text-zinc-500">
               {progress.total ? `${Math.round((progress.done / progress.total) * 100)}%` : ""}
@@ -626,11 +691,27 @@ export function Dashboard() {
             />
           </section>
 
+          {screen ? (
+            <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3 text-xs text-zinc-400">
+              <span className="text-[11px] tracking-[0.16em] text-zinc-500">SCREENING PIPELINE</span>
+              <p className="mt-1">
+                監視 {screen.discovered} 件 → 市場データあり {screen.marketDataAvailable} 件 →
+                {" "}軽量スクリーニング {screen.prescreened} 件（うち短期足検証 {screen.candleProbed} 件 /
+                {" "}追加API {screen.candleRequests} 回）→ 詳細分析 {screen.detailCandidates.length} 件
+              </p>
+              <p className="mt-1 text-zinc-500">
+                Phase 1はTicker一括データを再利用し、上位候補のみ15分足を1本取得します。
+                Phase 2に進まない銘柄も監視対象から外していません。
+              </p>
+            </section>
+          ) : null}
+
           <DecisionEnginePanel
             rows={scoredRows}
             market={market}
             signals={trackedSignals}
             settings={signalSettings}
+            onSelect={setSelected}
           />
 
           {candidates.length ? (

@@ -69,7 +69,10 @@ function parseSnapshot(value: unknown): SignalScoreSnapshot | null {
   ]) {
     if (price != null && (typeof price !== "number" || !Number.isFinite(price) || price <= 0)) return null;
   }
-  if (value.riskTier != null && !["LOW RISK", "MEDIUM RISK", "HIGH RISK"].includes(String(value.riskTier))) return null;
+  if (
+    value.riskTier != null &&
+    !["LOW RISK", "MEDIUM RISK", "HIGH RISK", "EXTREME RISK"].includes(String(value.riskTier))
+  ) return null;
   if (value.futures != null && !score(value.futures)) return null;
   if (typeof value.price !== "number" || !Number.isFinite(value.price) || value.price <= 0) return null;
   if (!["up", "down", "none"].includes(String(value.driftSide))) return null;

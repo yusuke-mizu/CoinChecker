@@ -26,6 +26,7 @@ type OkxTicker = {
   high24h?: string;
   low24h?: string;
   vol24h?: string;
+  volCcy24h?: string;
 };
 
 const BAR: Record<CoreTimeframe | "5m", string> = {
@@ -127,6 +128,7 @@ function tickerFromRow(t: OkxTicker): TickerSnapshot {
     high24h: parseNumber(t.high24h),
     low24h: parseNumber(t.low24h),
     volume24h: parseNumber(t.vol24h),
+    quoteVolume24h: parseNumber(t.volCcy24h),
   };
 }
 

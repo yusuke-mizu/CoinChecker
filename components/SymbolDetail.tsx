@@ -241,15 +241,32 @@ function TradePlanPanel({ plan }: { plan: TradePlan | null }) {
       </div>
       <div className="mt-2 grid grid-cols-2 gap-1 font-mono text-zinc-300">
         <span>ZONE {formatPrice(plan.entryZoneLow)} - {formatPrice(plan.entryZoneHigh)}</span>
-        <span>R/R {plan.rewardRisk.toFixed(2)}</span>
-        <span>STOP {formatPrice(plan.structureStop)}</span>
-        <span>HARD {formatPrice(plan.hardStop)} ({plan.hardStopPct}%)</span>
-        <span>TP1 {formatPrice(plan.target1)}</span>
-        <span>TP2 {formatPrice(plan.target2)}</span>
+        <span>ENTRY {formatPrice(plan.levels.entryReference)}</span>
+        <span>SL {formatPrice(plan.levels.stopLoss)} (-{plan.levels.stopLossPct.toFixed(2)}%)</span>
+        <span>HARD {formatPrice(plan.hardStop)} (-{plan.hardStopPct}%)</span>
+        <span>TP1 {formatPrice(plan.levels.target1)} (+{plan.levels.target1Pct.toFixed(2)}%)</span>
+        <span>TP2 {formatPrice(plan.levels.target2)} (+{plan.levels.target2Pct.toFixed(2)}%)</span>
+        <span>R/R 1 : {plan.levels.rewardRisk.toFixed(2)}</span>
+        <span>LEV {plan.leverage.min}〜{plan.leverage.max}x</span>
+        <span>HOLD {plan.holdingWindow}</span>
+        <span>CONF {plan.confidenceScore}</span>
         <span>OVERHEAT {plan.overheatScore}</span>
         <span>OVERSOLD {plan.oversoldScore}</span>
       </div>
-      <p className="mt-2 font-semibold text-cyan-200">{plan.entryLocation}</p>
+      <p className="mt-2 text-[11px] text-zinc-500">
+        Margin ROI @{plan.leverage.max}x: TP1 +{plan.leverage.marginRoiAtTarget1Pct.toFixed(1)}% /
+        {" "}Stop -{plan.leverage.marginLossAtStopPct.toFixed(1)}% · 推定EV{" "}
+        {plan.estimatedExpectedValuePct >= 0 ? "+" : ""}
+        {plan.estimatedExpectedValuePct.toFixed(2)}%（実測勝率ではありません）
+      </p>
+      <p className="mt-1 text-[11px] text-zinc-500">
+        Expected Move 15M {plan.expectedMove15mPct?.toFixed(2) ?? "—"}% · 1H{" "}
+        {plan.expectedMove1hPct?.toFixed(2) ?? "—"}% · 4H {plan.expectedMove4hPct?.toFixed(2) ?? "—"}%
+      </p>
+      {plan.leverage.warning ? (
+        <p className="mt-1 font-semibold text-rose-300">{plan.leverage.warning}</p>
+      ) : null}
+      <p className="mt-2 font-semibold text-cyan-200">{plan.entryVerdict}</p>
       <p className="mt-1 text-zinc-400">
         Breakout {plan.breakoutStatus.replaceAll("_", " ")}
         {plan.breakoutLevel == null ? "" : ` @ ${formatPrice(plan.breakoutLevel)}`}
