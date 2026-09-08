@@ -652,8 +652,8 @@ export function Dashboard() {
           <SignalPerformancePanel signals={trackedSignals} />
 
           <section className="grid gap-4 lg:grid-cols-2">
-            <RankList title="買い候補 TOP" rows={longs} accent="emerald" onSelect={setSelected} />
-            <RankList title="売り候補 TOP" rows={shorts} accent="rose" onSelect={setSelected} />
+            <RankList title="NOW ENTRY LONG（期待値順）" rows={longs} accent="emerald" onSelect={setSelected} />
+            <RankList title="NOW ENTRY SHORT（期待値順）" rows={shorts} accent="rose" onSelect={setSelected} />
           </section>
           <section className="grid gap-4 lg:grid-cols-2">
             <RankList title="ENTRY TIMING が高い" rows={timings} accent="emerald" onSelect={setSelected} score="timing" />
@@ -752,7 +752,12 @@ export function Dashboard() {
                       </td>
                       <td className="px-2 py-2 font-mono text-emerald-300">{row.entryExpectancy.long?.total ?? "—"}</td>
                       <td className="px-2 py-2 font-mono text-rose-300">{row.entryExpectancy.short?.total ?? "—"}</td>
-                      <td className="px-2 py-2 font-mono">{row.timing?.score ?? "—"}</td>
+                      <td className="px-2 py-2 font-mono">
+                        {Math.max(
+                          row.entryExpectancy.long?.timingScore ?? 0,
+                          row.entryExpectancy.short?.timingScore ?? 0,
+                        ) || "—"}
+                      </td>
                       <td className="px-2 py-2 text-[10px]">{row.regime?.regime ?? "—"}</td>
                       <td className="px-2 py-2 font-mono">
                         {Math.max(
@@ -854,7 +859,10 @@ function RankList({
                 : score === "revBear"
                   ? row.reversal?.bearish
                   : score === "timing"
-                    ? row.timing?.score
+                    ? Math.max(
+                        row.entryExpectancy.long?.timingScore ?? 0,
+                        row.entryExpectancy.short?.timingScore ?? 0,
+                      )
                     : accent === "emerald"
                       ? row.entryExpectancy.long?.total
                       : row.entryExpectancy.short?.total;

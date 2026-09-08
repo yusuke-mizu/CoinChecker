@@ -143,7 +143,14 @@ function CandidateTable({
                   </td>
                   <td className="px-2 py-2 font-mono text-emerald-300">{analysis?.entryExpectancy.long?.total ?? "N/A"}</td>
                   <td className="px-2 py-2 font-mono text-rose-300">{analysis?.entryExpectancy.short?.total ?? "N/A"}</td>
-                  <td className="px-2 py-2 font-mono">{analysis?.timing?.score ?? "N/A"}</td>
+                  <td className="px-2 py-2 font-mono">
+                    {analysis
+                      ? Math.max(
+                          analysis.entryExpectancy.long?.timingScore ?? 0,
+                          analysis.entryExpectancy.short?.timingScore ?? 0,
+                        ) || "N/A"
+                      : "N/A"}
+                  </td>
                   <td className="px-2 py-2 text-[10px]">
                     {availability === "SCORING_AVAILABLE"
                       ? analysis?.confidence ?? "AVAILABLE"

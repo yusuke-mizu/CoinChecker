@@ -297,6 +297,7 @@ export async function analyzeSymbol(
     btc4h: btc4hForMarket,
     btcCorrelation,
     dominancePct: context.dominancePct,
+    currentPrice: ticker?.last,
   });
   const expectedShort = scoreExpectedEntry({
     direction: "SHORT",
@@ -309,6 +310,7 @@ export async function analyzeSymbol(
     btc4h: btc4hForMarket,
     btcCorrelation,
     dominancePct: context.dominancePct,
+    currentPrice: ticker?.last,
   });
   const rankedLong = { ...long, total: expectedLong?.total ?? 0 };
   const rankedShort = { ...short, total: expectedShort?.total ?? 0 };

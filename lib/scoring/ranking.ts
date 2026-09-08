@@ -55,7 +55,17 @@ export function topShort(rows: SymbolAnalysis[], limit = 5): SymbolAnalysis[] {
 export function topTiming(rows: SymbolAnalysis[], limit = 5): SymbolAnalysis[] {
   return [...rows]
     .filter((row) => row.rankingEligible && row.availability === "SCORING_AVAILABLE" && row.timing)
-    .sort((a, b) => (b.timing?.score ?? 0) - (a.timing?.score ?? 0))
+    .sort(
+      (a, b) =>
+        Math.max(
+          b.entryExpectancy.long?.timingScore ?? 0,
+          b.entryExpectancy.short?.timingScore ?? 0,
+        ) -
+        Math.max(
+          a.entryExpectancy.long?.timingScore ?? 0,
+          a.entryExpectancy.short?.timingScore ?? 0,
+        ),
+    )
     .slice(0, limit);
 }
 
