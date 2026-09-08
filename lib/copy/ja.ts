@@ -22,6 +22,38 @@ export function adviceFor(row: SymbolAnalysis): Advice {
       why: "BTCCには載っているが、公開USDT-Mの足が無い（OKX / Bybit / Binance）。",
     };
   }
+  const longEntry = row.entryExpectancy.long;
+  const shortEntry = row.entryExpectancy.short;
+  const entry =
+    (longEntry?.total ?? -1) >= (shortEntry?.total ?? -1) ? longEntry : shortEntry;
+  if (entry?.decision === "WAIT_FOR_PULLBACK") {
+    return {
+      tag: "押し/戻り待ち",
+      action: "Trendは強いが今は追わず、EMA/VWAP付近への調整を待つ。",
+      why: entry.warnings[0] ?? "現在価格では残り値幅に対するリスクが高い。",
+    };
+  }
+  if (entry?.decision === "WAIT_FOR_BREAKOUT") {
+    return {
+      tag: "Breakout待ち",
+      action: "Resistance/Supportの確認突破とRetestを待つ。",
+      why: "障壁が近く、Volume・OIを伴うBreakoutが未確認です。",
+    };
+  }
+  if (entry?.decision === "ENTRY_NOW") {
+    return {
+      tag: "ENTRY NOW",
+      action: `${entry.direction}候補。Target/構造Stopと10%最大Stopは別々に確認する。`,
+      why: `理論R/R ${entry.rewardRisk.toFixed(2)}、Expected Move ${entry.expectedMoveScore}。`,
+    };
+  }
+  if (entry?.decision === "ENTRY_WATCH") {
+    return {
+      tag: "ENTRY WATCH",
+      action: "期待値は監視水準。Timingと価格位置の改善を確認する。",
+      why: `Entry ${entry.total}、理論R/R ${entry.rewardRisk.toFixed(2)}。`,
+    };
+  }
   if (row.setup) {
     return {
       tag: row.setup.headline,

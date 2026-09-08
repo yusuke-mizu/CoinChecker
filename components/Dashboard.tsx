@@ -26,6 +26,7 @@ import { NewEntryPanel } from "@/components/NewEntryPanel";
 import { SignalSettings } from "@/components/SignalSettings";
 import { TrackedSignalsPanel } from "@/components/TrackedSignalsPanel";
 import { SignalPerformancePanel } from "@/components/SignalPerformancePanel";
+import { ExpectedValueSetsPanel } from "@/components/ExpectedValueSetsPanel";
 import {
   adviceFor,
   macdJa,
@@ -642,12 +643,12 @@ export function Dashboard() {
           <NewEntryPanel rows={scoredRows} settings={signalSettings} onSelect={setSelected} />
           <TrackedSignalsPanel
             signals={trackedSignals}
-            settings={signalSettings}
             onSelect={(symbol) => {
               const row = analysisBySymbol.get(symbol);
               if (row) setSelected(row);
             }}
           />
+          <ExpectedValueSetsPanel signals={trackedSignals} settings={signalSettings} />
           <SignalPerformancePanel signals={trackedSignals} />
 
           <section className="grid gap-4 lg:grid-cols-2">

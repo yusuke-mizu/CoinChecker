@@ -29,7 +29,7 @@ export function SymbolDetail({
             <h2 className="font-mono text-lg text-zinc-50">{row.display}</h2>
             <p className="text-xs text-zinc-500">
               {formatPrice(row.ticker?.last)} · {formatPct(row.ticker?.change24hPct)} · BTC連動{" "}
-              {formatNum(row.btcCorrelation, 2)}
+              {formatNum(row.btcCorrelation, 2)} · Beta {formatNum(row.btcBeta, 2)}
             </p>
           </div>
           <button
