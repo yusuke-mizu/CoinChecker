@@ -56,6 +56,7 @@ export type SignalScoreSnapshot = {
   exitAlert: number;
   price: number;
   btcCorrelation: number | null;
+  btcBeta: number | null;
   confidence: SymbolAnalysis["confidence"];
   marketVenue: CandleVenue | null;
   signalLabel: SignalLabel;

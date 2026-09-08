@@ -24,7 +24,7 @@ import { decideSetup, nextEntryWindow } from "@/lib/scoring/setup";
 import { dataSourceDisplay } from "@/lib/data/provider-mode";
 import { loadFuturesPositioning } from "@/lib/analysis/futures-data";
 import { assessCandleQuality } from "@/lib/scoring/quality";
-import { btcReturnCorrelation, HIGH_BTC_CORR } from "@/lib/correlation/pearson";
+import { btcReturnBeta, btcReturnCorrelation, HIGH_BTC_CORR } from "@/lib/correlation/pearson";
 import type {
   BtccCandidate,
   Candle,
@@ -104,6 +104,7 @@ function baseAnalysis(
     notes: [],
     dataSource: "okx-swap-public",
     btcCorrelation: null,
+    btcBeta: null,
     rankLong: null,
     rankShort: null,
     reversal: null,
@@ -268,6 +269,7 @@ export async function analyzeSymbol(
     compact === "BTCUSDT" ? closes1h : context.btc1hCloses;
   const btcCorrelation =
     compact === "BTCUSDT" ? 1 : btcReturnCorrelation(closes1h, btcCloses);
+  const btcBeta = compact === "BTCUSDT" ? 1 : btcReturnBeta(closes1h, btcCloses);
   if (btcCorrelation != null && Math.abs(btcCorrelation) >= HIGH_BTC_CORR && compact !== "BTCUSDT") {
     notes.push(`High BTC 1H return correlation (${btcCorrelation.toFixed(2)})`);
   }
@@ -349,6 +351,7 @@ export async function analyzeSymbol(
     notes,
     dataSource: `${venue}-usdt-m-public`,
     btcCorrelation,
+    btcBeta,
     rankLong: null,
     rankShort: null,
     reversal,

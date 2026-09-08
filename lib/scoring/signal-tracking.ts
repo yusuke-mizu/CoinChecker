@@ -120,6 +120,7 @@ export function toSignalObservation(
     exitAlert: exit.score,
     price,
     btcCorrelation: row.btcCorrelation,
+    btcBeta: row.btcBeta,
     confidence: row.confidence,
     marketVenue: row.marketVenue,
     signalLabel: row.signal,
