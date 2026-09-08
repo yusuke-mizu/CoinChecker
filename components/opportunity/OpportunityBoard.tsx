@@ -12,6 +12,7 @@ import type {
   OpportunitySide,
   OpportunityVerdict,
 } from "@/lib/types/opportunity";
+import type { PredictionRecord } from "@/lib/types/prediction";
 
 type UniverseInfo = { total: number; batchSize: number };
 type BatchResponse = {
@@ -20,6 +21,8 @@ type BatchResponse = {
   btcRegime: BtcRegime;
   offset: number;
   total: number;
+  modelVersion: string | null;
+  predictions: PredictionRecord[];
   updatedAt: string;
 };
 
@@ -72,6 +75,8 @@ export function OpportunityBoard() {
   const [positiveOnly, setPositiveOnly] = useState(true);
   const [openSymbol, setOpenSymbol] = useState<string | null>(null);
   const [showExcluded, setShowExcluded] = useState(false);
+  const [modelVersion, setModelVersion] = useState<string | null>(null);
+  const [logged, setLogged] = useState<number | null>(null);
 
   const cancelRef = useRef(false);
 
@@ -99,8 +104,11 @@ export function OpportunityBoard() {
     setExcluded([]);
     setOpenSymbol(null);
 
+    setLogged(null);
+
     const target = coverage === 0 ? universe.total : Math.min(coverage, universe.total);
     setProgress({ done: 0, target });
+    const collected: PredictionRecord[] = [];
 
     try {
       for (let offset = 0; offset < target; offset += universe.batchSize) {
@@ -120,12 +128,30 @@ export function OpportunityBoard() {
         setExcluded((current) => [...current, ...batch.excluded]);
         setRegime(batch.btcRegime);
         setUpdatedAt(batch.updatedAt);
+        setModelVersion(batch.modelVersion);
+        collected.push(...(batch.predictions ?? []));
         setProgress({ done: Math.min(offset + limit, target), target });
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setScanning(false);
+    }
+
+    // One write for the whole scan. Every stated probability is recorded before
+    // its outcome exists, which is what makes the calibration screen a real
+    // measurement instead of the model grading its own homework.
+    if (collected.length > 0) {
+      try {
+        await fetch("/api/predictions", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ records: collected.slice(0, 200) }),
+        });
+        setLogged(Math.min(collected.length, 200));
+      } catch {
+        setLogged(null);
+      }
     }
   }, [coverage, universe]);
 
@@ -197,6 +223,12 @@ export function OpportunityBoard() {
               className="rounded border border-zinc-700 px-2 py-1 text-zinc-400 hover:bg-zinc-800"
             >
               詳細分析（旧画面）
+            </Link>
+            <Link
+              href="/model"
+              className="rounded border border-zinc-700 px-2 py-1 text-zinc-400 hover:bg-zinc-800"
+            >
+              Model / Calibration
             </Link>
             <Link
               href="/simulation"
@@ -286,6 +318,20 @@ export function OpportunityBoard() {
         </div>
 
         {regime && <p className="text-[11px] text-zinc-500">{regime.label}</p>}
+        <p className="text-[11px] text-zinc-500">
+          {modelVersion ? (
+            <>
+              確率推定: 学習モデル{" "}
+              <span className="font-mono text-zinc-400">{modelVersion}</span>
+              {logged != null && ` ・ 予測 ${logged} 件を検証用に記録`}
+            </>
+          ) : rows.length > 0 ? (
+            <span className="text-amber-300/80">
+              学習モデル未公開のため履歴ベース推定で表示中。Model /
+              Calibration画面で学習を実行すると予測モデルに切り替わります。
+            </span>
+          ) : null}
+        </p>
         {error && (
           <p className="rounded border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-[11px] text-rose-200">
             {error}

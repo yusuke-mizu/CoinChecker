@@ -17,18 +17,23 @@ import {
   type FirstTouchSample,
   type VolatilityModel,
 } from "@/lib/scoring/first-passage";
-import { buildSymbolContext, type MarketContext } from "@/lib/features/extract";
+import {
+  buildSymbolContext,
+  STATE_FEATURE_NAMES,
+  type MarketContext,
+} from "@/lib/features/extract";
 import { FEATURE_WARMUP_BARS } from "@/lib/features/feature-series";
 import {
   buildLiveFeatures,
   confidenceScore,
   predictorFor,
   REQUIRED_BARS,
+  type LiveFeatures,
   type SymbolPredictor,
 } from "@/lib/model/predict";
 import type { BulkDerivativeStats } from "@/lib/market-data/bulk-derivatives";
 import type { Candle, TickerSnapshot } from "@/lib/types/market";
-import type { TrainedModel } from "@/lib/types/prediction";
+import type { PredictionRecord, TrainedModel } from "@/lib/types/prediction";
 import type { CandleVenue } from "@/lib/types/venue";
 import type {
   BtcRegime,
@@ -866,8 +871,57 @@ export type OpportunityInput = {
 };
 
 export type OpportunityOutcome =
-  | { ok: true; row: OpportunityRow }
+  | { ok: true; row: OpportunityRow; predictions: PredictionRecord[] }
   | { ok: false; reason: string };
+
+/** Verdicts worth recording. A rejected idea has no outcome to score against. */
+const LOGGED_VERDICTS = new Set<OpportunityVerdict>(["ENTER NOW", "GOOD BUT WAIT"]);
+
+/**
+ * Snapshots a prediction for later scoring.
+ *
+ * The id is keyed to the candle the decision was made on, so re-scanning the
+ * same bar cannot create a second record and quietly double-count a call. The
+ * feature vector travels with the record so a future model version can re-score
+ * the same moment without refetching history.
+ */
+function predictionRecordFor(input: {
+  symbol: string;
+  side: OpportunitySide;
+  live: LiveFeatures;
+  modelVersion: string;
+  barOpenTime: number;
+  confidence: { score: number; band: "HIGH" | "MEDIUM" | "LOW" };
+}): PredictionRecord {
+  const { side, live } = input;
+  const horizon = side.horizons.find((entry) => entry.recommended) ?? side.horizons[0];
+  const features: Record<string, number> = {};
+  STATE_FEATURE_NAMES.forEach((name, index) => {
+    features[name] = Math.round(live.state[index] * 10_000) / 10_000;
+  });
+  return {
+    id: `${input.symbol}:${side.direction}:${input.barOpenTime}:${input.modelVersion}`,
+    timestamp: new Date(input.barOpenTime).toISOString(),
+    modelVersion: input.modelVersion,
+    symbol: input.symbol,
+    direction: side.direction,
+    entryPrice: side.entryPrice,
+    targetPct: side.recommendedTargetPct,
+    stopPct: side.stop.pct,
+    horizonMinutes: horizon.minutes,
+    targetProbability: side.profitProbability / 100,
+    stopProbability: side.stopProbability / 100,
+    expectedValuePct: side.expectedValuePct,
+    confidence: input.confidence.score,
+    confidenceBand: input.confidence.band,
+    recommendedLeverageMax: side.leverage.recommendedMax,
+    holdingMinutes: side.holding.maxMinutes,
+    verdict: side.verdict,
+    features,
+    resolvesAt: new Date(input.barOpenTime + horizon.minutes * 60_000).toISOString(),
+    result: null,
+  };
+}
 
 /** Both directions for one symbol. Excluded only when the data cannot support it. */
 export function evaluateOpportunity(input: OpportunityInput): OpportunityOutcome {
@@ -945,7 +999,7 @@ export function evaluateOpportunity(input: OpportunityInput): OpportunityOutcome
         })()
       : null;
 
-  const confidence = live
+  const confidenceDetail = live
     ? confidenceScore({
         model: input.model!,
         direction: "LONG",
@@ -957,7 +1011,10 @@ export function evaluateOpportunity(input: OpportunityInput): OpportunityOutcome
         hasBtcContext: input.market != null,
         regimeStable: input.regime.state !== "RISK_OFF",
         modelDisagreement: 0,
-      }).score
+      })
+    : null;
+  const confidence = confidenceDetail
+    ? confidenceDetail.score
     : Math.round(
         clamp(
           Math.min(100, ess * 2.5) * 0.45 +
@@ -1014,8 +1071,26 @@ export function evaluateOpportunity(input: OpportunityInput): OpportunityOutcome
           ? "SHORT"
           : null;
 
+  const barOpenTime = candles[candles.length - 1].openTime;
+  const predictions: PredictionRecord[] =
+    live && input.model && confidenceDetail
+      ? ([long, short].filter(Boolean) as OpportunitySide[])
+          .filter((side) => LOGGED_VERDICTS.has(side.verdict))
+          .map((side) =>
+            predictionRecordFor({
+              symbol: input.symbol,
+              side,
+              live,
+              modelVersion: input.model!.version,
+              barOpenTime,
+              confidence: confidenceDetail,
+            }),
+          )
+      : [];
+
   return {
     ok: true,
+    predictions,
     row: {
       symbol: input.symbol,
       display: input.display,

@@ -3,7 +3,7 @@ import { CANDLE_LIMIT, evaluateOpportunity } from "@/lib/analysis/opportunity";
 import { buildMarketContext, type MarketContext } from "@/lib/features/extract";
 import { readActiveModel } from "@/lib/server/model-store";
 import { loadBulkDerivatives, type BulkDerivativeStats } from "@/lib/market-data/bulk-derivatives";
-import type { TrainedModel } from "@/lib/types/prediction";
+import type { PredictionRecord, TrainedModel } from "@/lib/types/prediction";
 import { fetchVenueOhlcv } from "@/lib/market-data/venue-router";
 import { emaSeries } from "@/lib/indicators";
 import { mapPool } from "@/lib/util/pool";
@@ -160,6 +160,12 @@ export type ScanRequest = {
 export type OpportunityBatch = OpportunityScanResult & {
   offset: number;
   total: number;
+  /**
+   * Predictions made in this batch. The client accumulates them across the whole
+   * scan and posts once, so a paginated scan costs one KV write rather than one
+   * per batch.
+   */
+  predictions: PredictionRecord[];
 };
 
 /**
@@ -182,6 +188,7 @@ export async function scanOpportunities(request: ScanRequest = {}): Promise<Oppo
 
   const rows: OpportunityRow[] = [];
   const excluded: ExcludedSymbol[] = [];
+  const predictions: PredictionRecord[] = [];
 
   await mapPool(slice, CANDLE_CONCURRENCY, async (candidate) => {
     try {
@@ -203,8 +210,12 @@ export async function scanOpportunities(request: ScanRequest = {}): Promise<Oppo
         model,
         market,
       });
-      if (outcome.ok) rows.push(outcome.row);
-      else excluded.push({ symbol: candidate.symbol, reason: outcome.reason });
+      if (outcome.ok) {
+        rows.push(outcome.row);
+        predictions.push(...outcome.predictions);
+      } else {
+        excluded.push({ symbol: candidate.symbol, reason: outcome.reason });
+      }
     } catch (error) {
       excluded.push({
         symbol: candidate.symbol,
@@ -222,6 +233,7 @@ export async function scanOpportunities(request: ScanRequest = {}): Promise<Oppo
     offset,
     total: candidates.length,
     modelVersion: model?.version ?? null,
+    predictions,
     updatedAt: new Date().toISOString(),
   };
 }
