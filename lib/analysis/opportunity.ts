@@ -68,6 +68,10 @@ const SLIPPAGE_PCT = 0.02;
 const ROUND_TRIP_COST_PCT = 2 * (TAKER_FEE_PCT + SLIPPAGE_PCT);
 const MAX_TILT = 0.7;
 const MAX_STOP_PCT = 5;
+/** Below this chance of being reached, a target is not worth planning around. */
+const MIN_TARGET_PROBABILITY = 0.15;
+/** Wicks make anything higher a liquidation hazard on a short-horizon trade. */
+const MAX_LEVERAGE = 15;
 
 /** Loss of margin tolerated at the stop, percent, per risk appetite. */
 const RISK_BUDGET = { conservative: 3, recommended: 6, aggressive: 12 };
@@ -301,17 +305,18 @@ function leverageFor(input: {
 
   // Liquidation must sit well beyond the stop, including typical overshoot.
   const liquidationCap = Math.floor(100 / (stopPct * 1.6 + MAINTENANCE_MARGIN_PCT));
-  let ceiling = Math.max(1, Math.min(20, liquidationCap));
-  if (liquidationCap < 20) caps.push(`Liquidation余裕から上限${liquidationCap}x`);
+  let ceiling = Math.max(1, Math.min(MAX_LEVERAGE, liquidationCap));
+  if (liquidationCap < MAX_LEVERAGE) caps.push(`Liquidation余裕から上限${liquidationCap}x`);
 
-  const volatilityCap = atrPct >= 2.5 ? 3 : atrPct >= 1.5 ? 5 : atrPct >= 0.8 ? 10 : 20;
+  const volatilityCap =
+    atrPct >= 2.5 ? 3 : atrPct >= 1.5 ? 5 : atrPct >= 0.8 ? 10 : MAX_LEVERAGE;
   if (volatilityCap < ceiling) {
     ceiling = volatilityCap;
     caps.push(`高ボラティリティ(ATR ${atrPct.toFixed(2)}%)で上限${volatilityCap}x`);
   }
 
   if (input.adverseExcursionPct != null && input.adverseExcursionPct > 0) {
-    const excursionCap = Math.floor(100 / (input.adverseExcursionPct * 1.2 + MAINTENANCE_MARGIN_PCT));
+    const excursionCap = Math.floor(100 / (input.adverseExcursionPct * 1.5 + MAINTENANCE_MARGIN_PCT));
     if (excursionCap < ceiling) {
       ceiling = Math.max(1, excursionCap);
       caps.push(`過去の最大逆行幅から上限${Math.max(1, excursionCap)}x`);
@@ -329,10 +334,8 @@ function leverageFor(input: {
   }
 
   const band = (budget: number): [number, number] => {
-    const raw = budget / stopPct;
-    const max = clamp(Math.floor(Math.min(raw, ceiling)), 1, 25);
-    const min = clamp(Math.floor(Math.min(raw * 0.65, max)), 1, max);
-    return [min, max];
+    const max = clamp(Math.floor(Math.min(budget / stopPct, ceiling)), 1, MAX_LEVERAGE);
+    return [clamp(Math.floor(max * 0.65), 1, max), max];
   };
 
   const [conservativeMin, conservativeMax] = band(RISK_BUDGET.conservative);
@@ -516,29 +519,48 @@ function evaluateSide(input: {
   }
   if (choices.length === 0) return null;
 
-  // Expected value per hour is the objective: it picks the target, the stop and
-  // the holding window together, and costs stop the shortest window from always
-  // winning on rate alone.
-  const best = choices.reduce((winner, choice) =>
-    choice.evPerHour > winner.evPerHour ? choice : winner,
-  );
+  // A target the price is unlikely to reach inside the window is not a plan, and
+  // it would otherwise win the loss-minimising fallback below by never resolving.
+  const plausible = choices.filter((choice) => choice.target >= MIN_TARGET_PROBABILITY);
+
+  // Among plans that make money, the best one is the fastest earner, so expected
+  // value per hour picks the target, the stop and the holding window together.
+  // Once nothing is profitable that rate flips meaning -- a longer window would
+  // simply dilute the loss -- so the fallback ranks on expected value itself.
+  // When nothing at all is reachable, report the most reachable plan so the row
+  // still shows a coherent (and rejected) idea rather than an unhittable target.
+  const profitable = plausible.filter((choice) => choice.ev > 0);
+  const best =
+    profitable.length > 0
+      ? profitable.reduce((winner, choice) =>
+          choice.evPerHour > winner.evPerHour ? choice : winner,
+        )
+      : plausible.length > 0
+        ? plausible.reduce((winner, choice) => (choice.ev > winner.ev ? choice : winner))
+        : choices.reduce((winner, choice) => (choice.target > winner.target ? choice : winner));
 
   const spec = HORIZON_SPECS[best.horizonIndex];
   const stop = best.stop;
 
+  // Adverse excursion at the 90th percentile, not the mean: leverage has to
+  // survive the bad cases inside the window, not the typical one.
   const adverseExcursion = (() => {
-    // Weighted mean of the worst adverse excursion seen inside the window.
-    let weighted = 0;
+    const buckets = new Array<number>(BARRIER_GRID.length + 1).fill(0);
     for (const sample of estimator.samples) {
       const firsts = isLong ? sample.firstDown : sample.firstUp;
-      let touched = 0;
+      let reached = 0;
       for (let g = 0; g < BARRIER_GRID.length; g += 1) {
-        if (firsts[g] <= spec.bars) touched = BARRIER_GRID[g];
+        if (firsts[g] <= spec.bars) reached = g + 1;
       }
-      weighted += sample.weight * touched;
+      buckets[reached] += sample.weight;
     }
-    const mean = weighted / estimator.weightTotal;
-    return mean > 0 ? mean : null;
+    const cutoff = estimator.weightTotal * 0.9;
+    let cumulative = 0;
+    for (let g = 0; g < buckets.length; g += 1) {
+      cumulative += buckets[g];
+      if (cumulative >= cutoff) return g === 0 ? null : BARRIER_GRID[g - 1];
+    }
+    return BARRIER_GRID[BARRIER_GRID.length - 1];
   })();
 
   const leverage = leverageFor({
@@ -624,7 +646,8 @@ function evaluateSide(input: {
       ? "NO ENTRY"
       : chaseRisk >= 60
         ? "WAIT FOR PULLBACK"
-        : best.ev >= 0.2 && best.target >= 0.4 && confidence >= 45
+        : // The edge has to clear another round trip, not just break even.
+          best.ev >= best.cost && best.target >= 0.35 && confidence >= 45
           ? "ENTER NOW"
           : "GOOD BUT WAIT";
 

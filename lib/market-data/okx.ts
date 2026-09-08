@@ -27,6 +27,7 @@ type OkxTicker = {
   low24h?: string;
   vol24h?: string;
   volCcy24h?: string;
+  volCcyQuote24h?: string;
 };
 
 const BAR: Record<CoreTimeframe | "5m", string> = {
@@ -122,13 +123,18 @@ function tickerFromRow(t: OkxTicker): TickerSnapshot {
   const open24h = parseNumber(t.open24h);
   const change24hPct =
     open24h && open24h !== 0 ? ((last - open24h) / open24h) * 100 : null;
+  // For SWAP instruments volCcy24h is denominated in the base currency, so only
+  // volCcyQuote24h is comparable across symbols as USD turnover.
+  const baseVolume = parseNumber(t.volCcy24h);
+  const quoteVolume =
+    parseNumber(t.volCcyQuote24h) ?? (baseVolume != null && last > 0 ? baseVolume * last : null);
   return {
     last,
     change24hPct,
     high24h: parseNumber(t.high24h),
     low24h: parseNumber(t.low24h),
-    volume24h: parseNumber(t.vol24h),
-    quoteVolume24h: parseNumber(t.volCcy24h),
+    volume24h: baseVolume,
+    quoteVolume24h: quoteVolume,
   };
 }
 

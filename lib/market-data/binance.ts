@@ -91,6 +91,72 @@ export async function fetchBinanceOhlcv(
     .sort((a, b) => a.openTime - b.openTime);
 }
 
+/**
+ * Deep kline history by paging backwards from now.
+ *
+ * A single klines call caps at 1500 bars (~15 days of 15m data), which is not
+ * enough history to train on. Each page walks `endTime` back to just before the
+ * oldest bar already collected, so pages never overlap and the result stays a
+ * clean ascending series.
+ */
+export async function fetchBinanceOhlcvHistory(
+  symbol: string,
+  timeframe: CoreTimeframe | "5m",
+  bars: number,
+): Promise<Candle[]> {
+  const compact = toCompactUsdt(symbol);
+  const interval = INTERVAL[timeframe];
+  const collected: Candle[] = [];
+  const seen = new Set<number>();
+  let endTime: number | null = null;
+
+  while (collected.length < bars) {
+    const remaining = Math.min(1500, bars - collected.length);
+    const suffix = endTime == null ? "" : `&endTime=${endTime}`;
+    const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${encodeURIComponent(compact)}&interval=${interval}&limit=${remaining}${suffix}`;
+    const rows = await fetchJson<Array<Array<string | number>>>(url, {
+      timeoutMs: 12_000,
+      retries: 1,
+    });
+    if (!Array.isArray(rows) || rows.length === 0) break;
+
+    let oldest = Number.POSITIVE_INFINITY;
+    let added = 0;
+    for (const row of rows) {
+      const openTime = Number(row[0]);
+      if (!Number.isFinite(openTime) || seen.has(openTime)) continue;
+      const takerBuy = Number(row[9]);
+      const candle: Candle = {
+        openTime,
+        open: Number(row[1]),
+        high: Number(row[2]),
+        low: Number(row[3]),
+        close: Number(row[4]),
+        volume: Number(row[5]),
+        closeTime: Number(row[6]),
+        takerBuyVolume: Number.isFinite(takerBuy) ? takerBuy : null,
+      };
+      if (
+        !Number.isFinite(candle.open) ||
+        !Number.isFinite(candle.high) ||
+        !Number.isFinite(candle.low) ||
+        !Number.isFinite(candle.close) ||
+        !Number.isFinite(candle.volume)
+      ) {
+        continue;
+      }
+      seen.add(openTime);
+      collected.push(candle);
+      added += 1;
+      if (openTime < oldest) oldest = openTime;
+    }
+    if (added === 0 || !Number.isFinite(oldest)) break;
+    endTime = oldest - 1;
+  }
+
+  return collected.sort((a, b) => a.openTime - b.openTime);
+}
+
 export async function fetchBinanceTickers(): Promise<Record<string, TickerSnapshot>> {
   const rows = await fetchJson<
     Array<{

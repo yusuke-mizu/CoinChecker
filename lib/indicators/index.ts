@@ -136,6 +136,146 @@ export function macd(closes: number[], fast = 12, slow = 26, signal = 9): MacdRe
   };
 }
 
+/** EMA over a series that may have leading gaps, preserving index alignment. */
+function emaOfSparse(values: Array<number | null>, period: number): Array<number | null> {
+  const out: Array<number | null> = Array(values.length).fill(null);
+  let seeded = 0;
+  let seedSum = 0;
+  let previous: number | null = null;
+  const k = 2 / (period + 1);
+  for (let i = 0; i < values.length; i += 1) {
+    const value = values[i];
+    if (value == null) continue;
+    if (previous == null) {
+      seeded += 1;
+      seedSum += value;
+      if (seeded === period) {
+        previous = seedSum / period;
+        out[i] = previous;
+      }
+    } else {
+      previous = value * k + previous * (1 - k);
+      out[i] = previous;
+    }
+  }
+  return out;
+}
+
+/**
+ * MACD as causal series. Unlike `macd()`, which compacts away the warmup nulls,
+ * these arrays stay aligned to the candle index so they can be read inside a
+ * historical loop without shifting the timeline.
+ */
+export function macdSeries(
+  closes: number[],
+  fast = 12,
+  slow = 26,
+  signalPeriod = 9,
+): {
+  macd: Array<number | null>;
+  signal: Array<number | null>;
+  hist: Array<number | null>;
+} {
+  const fastEma = emaSeries(closes, fast);
+  const slowEma = emaSeries(closes, slow);
+  const macdLine: Array<number | null> = closes.map((_, index) => {
+    const f = fastEma[index];
+    const s = slowEma[index];
+    return f == null || s == null ? null : f - s;
+  });
+  const signal = emaOfSparse(macdLine, signalPeriod);
+  return {
+    macd: macdLine,
+    signal,
+    hist: macdLine.map((value, index) => {
+      const line = signal[index];
+      return value == null || line == null ? null : value - line;
+    }),
+  };
+}
+
+/** Wilder ADX / +DI / -DI as causal series, aligned to the candle index. */
+export function adxSeries(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+  period = 14,
+): {
+  adx: Array<number | null>;
+  plusDi: Array<number | null>;
+  minusDi: Array<number | null>;
+} {
+  const n = Math.min(highs.length, lows.length, closes.length);
+  const adx: Array<number | null> = Array(n).fill(null);
+  const plusDi: Array<number | null> = Array(n).fill(null);
+  const minusDi: Array<number | null> = Array(n).fill(null);
+  if (n < period * 2 + 1) return { adx, plusDi, minusDi };
+
+  const tr: number[] = Array(n).fill(0);
+  const plusDm: number[] = Array(n).fill(0);
+  const minusDm: number[] = Array(n).fill(0);
+  for (let i = 1; i < n; i += 1) {
+    const upMove = highs[i] - highs[i - 1];
+    const downMove = lows[i - 1] - lows[i];
+    plusDm[i] = upMove > downMove && upMove > 0 ? upMove : 0;
+    minusDm[i] = downMove > upMove && downMove > 0 ? downMove : 0;
+    tr[i] = Math.max(
+      highs[i] - lows[i],
+      Math.abs(highs[i] - closes[i - 1]),
+      Math.abs(lows[i] - closes[i - 1]),
+    );
+  }
+
+  let smoothTr = 0;
+  let smoothPlus = 0;
+  let smoothMinus = 0;
+  for (let i = 1; i <= period; i += 1) {
+    smoothTr += tr[i];
+    smoothPlus += plusDm[i];
+    smoothMinus += minusDm[i];
+  }
+
+  const dx: Array<number | null> = Array(n).fill(null);
+  const dxAt = (index: number) => {
+    if (!(smoothTr > 0)) return;
+    const plus = (100 * smoothPlus) / smoothTr;
+    const minus = (100 * smoothMinus) / smoothTr;
+    plusDi[index] = plus;
+    minusDi[index] = minus;
+    const total = plus + minus;
+    dx[index] = total === 0 ? 0 : (100 * Math.abs(plus - minus)) / total;
+  };
+  dxAt(period);
+  for (let i = period + 1; i < n; i += 1) {
+    smoothTr = smoothTr - smoothTr / period + tr[i];
+    smoothPlus = smoothPlus - smoothPlus / period + plusDm[i];
+    smoothMinus = smoothMinus - smoothMinus / period + minusDm[i];
+    dxAt(i);
+  }
+
+  // ADX seeds with the mean of the first `period` DX values, then Wilder smooths.
+  const seedEnd = period * 2 - 1;
+  let seedSum = 0;
+  let seedCount = 0;
+  for (let i = period; i <= seedEnd && i < n; i += 1) {
+    const value = dx[i];
+    if (value != null) {
+      seedSum += value;
+      seedCount += 1;
+    }
+  }
+  if (seedCount === 0) return { adx, plusDi, minusDi };
+  let value = seedSum / seedCount;
+  if (seedEnd < n) adx[seedEnd] = value;
+  for (let i = seedEnd + 1; i < n; i += 1) {
+    const current = dx[i];
+    if (current == null) continue;
+    value = (value * (period - 1) + current) / period;
+    adx[i] = value;
+  }
+  return { adx, plusDi, minusDi };
+}
+
 export type AdxResult = {
   adx: number | null;
   plusDi: number | null;
