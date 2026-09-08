@@ -1,4 +1,22 @@
-import { atrSeries, emaSeries, rsiSeries } from "@/lib/indicators";
+import {
+  BARRIER_GRID,
+  FEATURE_WARMUP,
+  blendWeight,
+  clamp,
+  enforceMonotonic,
+  estimateBasis,
+  logBarrier,
+  logit,
+  modelPairSplit,
+  normalCdf,
+  scanFirstTouch,
+  sigmoid,
+  snapToGrid,
+  stateFeatures,
+  touchProbability,
+  volatilityModel,
+  weightSamples,
+} from "./first-passage";
 import type { ExpectedEntryAssessment } from "./expected-entry";
 import type { Candle, CoreTimeframe } from "@/lib/types/market";
 import type { FuturesPositioning, TimeframeIndicators } from "@/lib/types/scoring";
@@ -14,247 +32,9 @@ import type {
 /** Profit / loss distances shown to the user, in percent of entry price. */
 export const REACH_LEVELS = [1, 2, 3, 5, 10] as const;
 
-/** Barrier distances the historical scan records first-touch bars for. */
-const GRID = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 7, 10];
-
-const FEATURE_WARMUP = 60;
-/** Blend point between the conditioned empirical estimate and the model. */
-const ESS_HALF_WEIGHT = 20;
+/** Swing-horizon stops below this are noise, not structure. */
+const MIN_STOP_PCT = 0.5;
 const MAX_TILT = 0.8;
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function normalCdf(x: number): number {
-  // Abramowitz & Stegun 7.1.26 applied to erf.
-  const sign = x < 0 ? -1 : 1;
-  const z = Math.abs(x) / Math.SQRT2;
-  const t = 1 / (1 + 0.3275911 * z);
-  const erf =
-    1 -
-    ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t +
-      0.254829592) *
-      t *
-      Math.exp(-z * z);
-  return 0.5 * (1 + sign * erf);
-}
-
-function logit(p: number): number {
-  const bounded = clamp(p, 1e-4, 1 - 1e-4);
-  return Math.log(bounded / (1 - bounded));
-}
-
-function sigmoid(x: number): number {
-  return 1 / (1 + Math.exp(-x));
-}
-
-type Sample = {
-  firstUp: number[];
-  firstDown: number[];
-  endReturnPct: number;
-  weight: number;
-};
-
-/**
- * Records, for every historical bar, how many bars it took to first touch each
- * grid distance above and below the entry close, plus the close-to-close result
- * at the horizon. One scan serves both directions and every TP/SL pair.
- */
-function scanHistory(candles: Candle[], horizonBars: number): Sample[] {
-  const samples: Sample[] = [];
-  const last = candles.length - 1 - horizonBars;
-  for (let t = FEATURE_WARMUP; t <= last; t += 1) {
-    const entry = candles[t].close;
-    if (!(entry > 0)) continue;
-    const firstUp = new Array<number>(GRID.length).fill(Number.POSITIVE_INFINITY);
-    const firstDown = new Array<number>(GRID.length).fill(Number.POSITIVE_INFINITY);
-    let maxUp = 0;
-    let maxDown = 0;
-    for (let j = 1; j <= horizonBars; j += 1) {
-      const bar = candles[t + j];
-      const up = ((bar.high - entry) / entry) * 100;
-      const down = ((entry - bar.low) / entry) * 100;
-      if (up > maxUp) {
-        maxUp = up;
-        for (let g = 0; g < GRID.length; g += 1) {
-          if (!Number.isFinite(firstUp[g]) && maxUp >= GRID[g]) firstUp[g] = j;
-        }
-      }
-      if (down > maxDown) {
-        maxDown = down;
-        for (let g = 0; g < GRID.length; g += 1) {
-          if (!Number.isFinite(firstDown[g]) && maxDown >= GRID[g]) firstDown[g] = j;
-        }
-      }
-    }
-    samples.push({
-      firstUp,
-      firstDown,
-      endReturnPct: ((candles[t + horizonBars].close - entry) / entry) * 100,
-      weight: 1,
-    });
-  }
-  return samples;
-}
-
-type StateFeatures = {
-  atrPct: Array<number | null>;
-  rsi: Array<number | null>;
-  trendUp: boolean[];
-  position: Array<number | null>;
-  volumeRatio: Array<number | null>;
-};
-
-function stateFeatures(candles: Candle[]): StateFeatures {
-  const closes = candles.map((candle) => candle.close);
-  const atr = atrSeries(candles);
-  const ema50 = emaSeries(closes, 50);
-  const ema200 = emaSeries(closes, 200);
-  const rsi = rsiSeries(closes, 14);
-  const position: Array<number | null> = candles.map((_, index) => {
-    if (index < 48) return null;
-    let high = -Infinity;
-    let low = Infinity;
-    for (let j = index - 47; j <= index; j += 1) {
-      high = Math.max(high, candles[j].high);
-      low = Math.min(low, candles[j].low);
-    }
-    if (!(high > low)) return null;
-    return ((closes[index] - low) / (high - low)) * 100;
-  });
-  const volumeRatio: Array<number | null> = candles.map((_, index) => {
-    if (index < 20) return null;
-    let sum = 0;
-    for (let j = index - 19; j <= index; j += 1) sum += candles[j].volume;
-    const average = sum / 20;
-    return average > 0 ? candles[index].volume / average : null;
-  });
-  return {
-    atrPct: atr.map((value, index) =>
-      value == null || !(closes[index] > 0) ? null : (value / closes[index]) * 100,
-    ),
-    rsi,
-    trendUp: candles.map((_, index) => {
-      const mid = ema50[index];
-      const slow = ema200[index];
-      return mid != null && slow != null ? mid > slow : false;
-    }),
-    position,
-    volumeRatio,
-  };
-}
-
-/**
- * Gaussian kernel over volatility, momentum, trend regime, range location and
- * participation. Historical bars that do not resemble the present state still
- * contribute, but far less, so the estimate is conditioned rather than gated by
- * indicator thresholds.
- */
-function weightSamples(
-  samples: Sample[],
-  features: StateFeatures,
-  candles: Candle[],
-  horizonBars: number,
-): { total: number; ess: number } {
-  const now = candles.length - 1;
-  const atrNow = features.atrPct[now];
-  const rsiNow = features.rsi[now];
-  const trendNow = features.trendUp[now];
-  const positionNow = features.position[now];
-  const volumeNow = features.volumeRatio[now];
-
-  let total = 0;
-  let totalSquares = 0;
-  for (let s = 0; s < samples.length; s += 1) {
-    const index = FEATURE_WARMUP + s;
-    if (index > candles.length - 1 - horizonBars) break;
-    let distance = 0;
-    const atr = features.atrPct[index];
-    if (atr != null && atrNow != null && atr > 0 && atrNow > 0) {
-      distance += (Math.log(atr / atrNow) / 0.45) ** 2;
-    }
-    const rsi = features.rsi[index];
-    if (rsi != null && rsiNow != null) distance += ((rsi - rsiNow) / 18) ** 2;
-    if (features.trendUp[index] !== trendNow) distance += 1.6;
-    const position = features.position[index];
-    if (position != null && positionNow != null) {
-      distance += ((position - positionNow) / 28) ** 2;
-    }
-    const volume = features.volumeRatio[index];
-    if (volume != null && volumeNow != null && volume > 0 && volumeNow > 0) {
-      distance += 0.5 * (Math.log(volume / volumeNow) / 0.6) ** 2;
-    }
-    const weight = Math.max(0.02, Math.exp(-0.5 * distance));
-    samples[s].weight = weight;
-    total += weight;
-    totalSquares += weight * weight;
-  }
-  return { total, ess: totalSquares > 0 ? (total * total) / totalSquares : 0 };
-}
-
-type ParametricModel = {
-  sigmaHorizon: number;
-  muHorizon: number;
-  sigmaPerHour: number;
-};
-
-function parametricModel(
-  candles: Candle[],
-  horizonBars: number,
-  barMinutes: number,
-): ParametricModel {
-  const window = candles.slice(-Math.min(200, candles.length));
-  const logReturns: number[] = [];
-  for (let i = 1; i < window.length; i += 1) {
-    const previous = window[i - 1].close;
-    if (previous > 0 && window[i].close > 0) {
-      logReturns.push(Math.log(window[i].close / previous));
-    }
-  }
-  const mean = logReturns.length
-    ? logReturns.reduce((sum, value) => sum + value, 0) / logReturns.length
-    : 0;
-  const variance = logReturns.length > 1
-    ? logReturns.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (logReturns.length - 1)
-    : 0;
-  const sigmaBar = Math.max(Math.sqrt(variance), 1e-5);
-  // Drift estimated from a few hundred bars is mostly noise, so it is shrunk hard.
-  const muBar = clamp(mean * 0.25, -sigmaBar * 0.5, sigmaBar * 0.5);
-  return {
-    sigmaHorizon: sigmaBar * Math.sqrt(horizonBars),
-    muHorizon: muBar * horizonBars,
-    sigmaPerHour: sigmaBar * Math.sqrt(60 / barMinutes),
-  };
-}
-
-/** First-passage probability for a drifting Brownian motion barrier. */
-function touchProbability(barrier: number, model: ParametricModel, favorable: boolean): number {
-  const mu = favorable ? model.muHorizon : -model.muHorizon;
-  const sigma = model.sigmaHorizon;
-  if (!(sigma > 0) || !(barrier > 0)) return 0;
-  const first = normalCdf((-barrier + mu) / sigma);
-  const exponent = clamp((2 * mu * barrier) / (sigma * sigma), -30, 30);
-  const second = Math.exp(exponent) * normalCdf((-barrier - mu) / sigma);
-  return clamp(first + second, 0, 1);
-}
-
-function logBarrier(pct: number, up: boolean): number {
-  return up ? Math.log(1 + pct / 100) : -Math.log(1 - pct / 100);
-}
-
-function snapToGrid(pct: number): { value: number; index: number } {
-  let index = 0;
-  let best = Number.POSITIVE_INFINITY;
-  for (let g = 0; g < GRID.length; g += 1) {
-    const distance = Math.abs(GRID[g] - pct);
-    if (distance < best) {
-      best = distance;
-      index = g;
-    }
-  }
-  return { value: GRID[index], index };
-}
 
 function holdingWindowFor(targetPct: number, sigmaPerHour: number): HoldingWindow {
   if (!(sigmaPerHour > 0)) return "1-2h";
@@ -346,15 +126,6 @@ function buildTilt(input: {
   return { total, factors };
 }
 
-/** Probabilities must not increase as the distance grows. */
-function enforceMonotonic(values: number[]): number[] {
-  const out = [...values];
-  for (let i = 1; i < out.length; i += 1) {
-    out[i] = Math.min(out[i], out[i - 1]);
-  }
-  return out;
-}
-
 export type ReachInput = {
   direction: "LONG" | "SHORT";
   assessment: ExpectedEntryAssessment;
@@ -386,19 +157,22 @@ export function analyzeReach(input: ReachInput): ReachAnalysis | null {
   const horizonBars = use15m ? 16 : 4;
   const horizonHours = (horizonBars * barMinutes) / 60;
 
-  const samples = scanHistory(candles, horizonBars);
+  const samples = scanFirstTouch(candles, [horizonBars]);
   if (samples.length < 20) return null;
   const features = stateFeatures(candles);
-  const { total: weightTotal, ess } = weightSamples(samples, features, candles, horizonBars);
+  const { total: weightTotal, ess } = weightSamples(samples, features);
   if (!(weightTotal > 0)) return null;
-  const model = parametricModel(candles, horizonBars, barMinutes);
-  const lambda = ess / (ess + ESS_HALF_WEIGHT);
+  const model = volatilityModel(candles, barMinutes);
+  const sigmaHorizon = model.sigmaBar * Math.sqrt(horizonBars);
+  const muHorizon = model.muBar * horizonBars;
+  const lambda = blendWeight(ess);
+  const basis = estimateBasis(lambda);
   const { total: tilt, factors } = buildTilt({ direction, assessment, indicators, futures });
 
   // Blended touch probability for each grid distance, favorable and adverse.
   const favorableGrid: number[] = [];
   const adverseGrid: number[] = [];
-  for (let g = 0; g < GRID.length; g += 1) {
+  for (let g = 0; g < BARRIER_GRID.length; g += 1) {
     let favorableWeighted = 0;
     let adverseWeighted = 0;
     for (const sample of samples) {
@@ -409,8 +183,18 @@ export function analyzeReach(input: ReachInput): ReachAnalysis | null {
     }
     const favorableEmpirical = favorableWeighted / weightTotal;
     const adverseEmpirical = adverseWeighted / weightTotal;
-    const favorableModel = touchProbability(logBarrier(GRID[g], isLong), model, true);
-    const adverseModel = touchProbability(logBarrier(GRID[g], !isLong), model, false);
+    const favorableModel = touchProbability(
+      logBarrier(BARRIER_GRID[g], isLong),
+      model,
+      horizonBars,
+      true,
+    );
+    const adverseModel = touchProbability(
+      logBarrier(BARRIER_GRID[g], !isLong),
+      model,
+      horizonBars,
+      false,
+    );
     favorableGrid.push(
       sigmoid(logit(lambda * favorableEmpirical + (1 - lambda) * favorableModel) + tilt),
     );
@@ -427,7 +211,7 @@ export function analyzeReach(input: ReachInput): ReachAnalysis | null {
     return {
       levelPct: pct,
       probability: clamp(source[index] * 100, 0, 100),
-      basis: lambda >= 0.7 ? "EMPIRICAL" : lambda >= 0.3 ? "BLENDED" : "MODEL",
+      basis,
     };
   };
 
@@ -448,7 +232,7 @@ export function analyzeReach(input: ReachInput): ReachAnalysis | null {
     ...(barrierPct != null ? [barrierPct] : []),
   ]
     .filter((value) => Number.isFinite(value) && value > 0)
-    .map((value) => snapToGrid(clamp(value, GRID[0], hardStopPct)))
+    .map((value) => snapToGrid(clamp(value, MIN_STOP_PCT, hardStopPct)))
     .filter(
       (candidate, index, all) =>
         all.findIndex((other) => other.index === candidate.index) === index,
@@ -466,16 +250,12 @@ export function analyzeReach(input: ReachInput): ReachAnalysis | null {
     }
     const targetEmpirical = targetFirst / weightTotal;
     const stopEmpirical = stopFirst / weightTotal;
-
-    // Model fallback: touch either barrier, split by the gambler's ruin ratio.
-    const targetBarrier = logBarrier(GRID[targetIndex], isLong);
-    const stopBarrier = logBarrier(GRID[stopIndex], !isLong);
-    const touchTarget = touchProbability(targetBarrier, model, true);
-    const touchStop = touchProbability(stopBarrier, model, false);
-    const either = clamp(touchTarget + touchStop - touchTarget * touchStop, 0, 1);
-    const share = stopBarrier / (targetBarrier + stopBarrier);
-    const targetModel = either * share;
-    const stopModel = either - targetModel;
+    const { target: targetModel, stop: stopModel } = modelPairSplit(
+      logBarrier(BARRIER_GRID[targetIndex], isLong),
+      logBarrier(BARRIER_GRID[stopIndex], !isLong),
+      model,
+      horizonBars,
+    );
 
     const target = clamp(
       sigmoid(logit(lambda * targetEmpirical + (1 - lambda) * targetModel) + tilt),
@@ -495,7 +275,7 @@ export function analyzeReach(input: ReachInput): ReachAnalysis | null {
   let driftWeighted = 0;
   let favorableEndWeight = 0;
   for (const sample of samples) {
-    const directional = isLong ? sample.endReturnPct : -sample.endReturnPct;
+    const directional = isLong ? sample.closeReturnPct[0] : -sample.closeReturnPct[0];
     driftWeighted += sample.weight * directional;
     if (directional > 0) favorableEndWeight += sample.weight;
   }
@@ -504,8 +284,7 @@ export function analyzeReach(input: ReachInput): ReachAnalysis | null {
     sigmoid(
       logit(
         lambda * (favorableEndWeight / weightTotal) +
-          (1 - lambda) *
-            normalCdf((isLong ? model.muHorizon : -model.muHorizon) / model.sigmaHorizon),
+          (1 - lambda) * normalCdf((isLong ? muHorizon : -muHorizon) / sigmaHorizon),
       ) + tilt,
     ) * 100,
     0,
@@ -630,7 +409,7 @@ export function analyzeReach(input: ReachInput): ReachAnalysis | null {
     favorableAnyProbability,
     adverseAnyProbability: 100 - favorableAnyProbability,
     expectedDriftPct: driftPct,
-    volatilityPerHorizonPct: model.sigmaHorizon * 100,
+    volatilityPerHorizonPct: sigmaHorizon * 100,
     candidates,
     recommendedStopPct: primary.stopPct,
     recommendedStopPrice: primary.stopPrice,

@@ -66,6 +66,8 @@ export async function fetchBinanceOhlcv(
   return rows
     .map((row) => {
       const openTime = Number(row[0]);
+      // Index 9 is taker buy base volume, which makes signed order flow available.
+      const takerBuy = Number(row[9]);
       return {
         openTime,
         open: Number(row[1]),
@@ -74,6 +76,7 @@ export async function fetchBinanceOhlcv(
         close: Number(row[4]),
         volume: Number(row[5]),
         closeTime: Number(row[6]),
+        takerBuyVolume: Number.isFinite(takerBuy) ? takerBuy : null,
       };
     })
     .filter(

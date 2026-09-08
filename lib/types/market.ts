@@ -10,6 +10,8 @@ export type Candle = {
   close: number;
   volume: number;
   closeTime: number;
+  /** Taker buy base volume. Only Binance klines report it; used for order-flow delta. */
+  takerBuyVolume?: number | null;
 };
 
 export type TickerSnapshot = {

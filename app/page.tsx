@@ -1,5 +1,5 @@
-import { Dashboard } from "@/components/Dashboard";
+import { OpportunityBoard } from "@/components/opportunity/OpportunityBoard";
 
 export default function Home() {
-  return <Dashboard />;
+  return <OpportunityBoard />;
 }

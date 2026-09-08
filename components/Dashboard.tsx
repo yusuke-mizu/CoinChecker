@@ -558,6 +558,12 @@ export function Dashboard() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Link
+            href="/"
+            className="flex h-10 items-center rounded-md border border-zinc-700 px-4 text-sm text-zinc-300 hover:border-zinc-500"
+          >
+            Entry Board
+          </Link>
+          <Link
             href="/simulation"
             className="flex h-10 items-center rounded-md border border-zinc-700 px-4 text-sm text-zinc-300 hover:border-zinc-500"
           >
