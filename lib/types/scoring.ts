@@ -15,6 +15,7 @@ import type { RegimeSnapshot } from "@/lib/scoring/regime";
 import type { TimingAssessment } from "@/lib/scoring/entry-timing";
 import type { SetupVerdict } from "@/lib/scoring/setup";
 import type { DirectionalExpectedEntry } from "@/lib/scoring/expected-entry";
+import type { TradePlan } from "./trade-decision";
 
 export type TrendLabel =
   | "Strong Bullish"
@@ -108,6 +109,7 @@ export type SymbolAnalysis = {
   long: DirectionScore | null;
   short: DirectionScore | null;
   entryExpectancy: DirectionalExpectedEntry;
+  tradePlans: { long: TradePlan | null; short: TradePlan | null };
   difference: number | null;
   bias: BiasLabel | null;
   signal: SignalLabel;
