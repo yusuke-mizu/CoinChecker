@@ -6,8 +6,7 @@ export function getServerSecret(name: string): string | null {
   if (processValue) return processValue;
 
   try {
-    const env = getCloudflareContext().env as Record<string, unknown>;
-    const value = env[name];
+    const value = Reflect.get(getCloudflareContext().env, name) as unknown;
     return typeof value === "string" && value.trim() ? value.trim() : null;
   } catch {
     // next dev can run before the Wrangler-backed context is initialized.

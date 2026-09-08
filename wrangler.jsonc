@@ -21,5 +21,10 @@
       "binding": "WORKER_SELF_REFERENCE",
       "service": "coinchecker"
     }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "SIGNAL_METADATA"
+    }
   ]
 }

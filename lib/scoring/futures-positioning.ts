@@ -76,7 +76,6 @@ export function computeFuturesPositioning(input: {
   const oiUp = (oiChange1hPct ?? oiChange15mPct ?? 0) > 0.4;
   const oiDown = (oiChange1hPct ?? oiChange15mPct ?? 0) < -0.4;
   const volSpike = (input.tf15m?.volumeRatio ?? 0) >= 1.5;
-  const fundPos = fundingRate != null && fundingRate > 0;
   const fundNeg = fundingRate != null && fundingRate < 0;
   const longHot = (fundingPercentile ?? 50) >= 90;
   const shortHot = (fundingPercentile ?? 50) <= 10;

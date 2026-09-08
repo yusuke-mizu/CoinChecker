@@ -2,7 +2,7 @@
 
 第三者公開情報からBTCCのUSDT銘柄候補を発見し、同一シンボルの補完市場データが十分な場合だけ、4H / 1H / 15M のテクニカル指標から **LONG / SHORT を別々に採点**する読み取り専用の判断支援ツールです。候補発見はBTCC公式確認を意味しません。
 
-自動売買・注文・決済・ポジション操作は実装していません。分析結果はメモリ上のみで、DBには保存しません。
+自動売買・注文・決済・ポジション操作は実装していません。市場データは永続保存せず、高評価Signalの最小metadataだけをCloudflare Workers KVへ保存します。
 
 ## できること
 
@@ -14,6 +14,8 @@
 - MARKET RISK 0–100（警告のみ。自動停止はしない）
 - BTCドミナンス（CoinGecko `/global`）
 - 自動更新 5 / 15 / 30分 / OFF
+- 高評価Signalの自動追跡（Signal Age、Deterioration、Take Profit / Exit / Stop Loss Watch）
+- NEW ENTRYとEXISTING SIGNALSの独立表示、Tracked Signalからの簡易BALANCED SET
 
 ## 調査結果（データソース）
 
@@ -120,4 +122,12 @@ npm run deploy
 
 - `export const runtime = "edge"` は使いません（OpenNext 未対応）
 - キャッシュ用 R2 は未接続です（ISR は使っていないため）
-- Workers から CoinGecko / OKX へ外向き fetch します。APIキーは不要です
+- Workers から CoinGecko / OKX / Bybit / Binance へ外向き fetch します
+
+### Signal Tracking用KV
+
+`wrangler.jsonc` の `SIGNAL_METADATA` bindingは、初回デプロイ時にWranglerがKV namespaceを自動プロビジョニングします。手動管理する場合は `npx wrangler kv namespace create SIGNAL_METADATA` で作成し、返されたIDをbindingへ設定してください。binding変更後は `npm run cf-typegen` を実行します。
+
+保存するのはSymbol、方向、Signal Price、生成/更新時刻、スコア、Data Quality、状態イベントだけです。OHLCV、OI/Funding履歴、板、注文、実約定価格、実PnLは保存しません。
+
+現在は認証機能がないため、KV上のSignal Historyと設定は全利用者で共有され、公開された `POST/PATCH /api/signals` から更新できます。入力値と件数は検証しますが、利用者単位の分離や投稿者の真正性は保証しません。個人専用データとして使う場合は、認証を追加してユーザー別保存へ変更してください。

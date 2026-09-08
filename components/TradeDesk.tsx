@@ -10,8 +10,6 @@ import type { AppAlert, ManualPosition } from "@/lib/types/alerts";
 import type { PerpetualContract } from "@/lib/types/market";
 import type { MarketEnvSnapshot, MarketRisk, SymbolAnalysis } from "@/lib/types/scoring";
 
-const DEDUPE_MS = 12 * 60_000;
-
 function intensityFromScore(score: number, kind: AppAlert["type"]): AppAlert["intensity"] {
   if (kind === "EXIT") {
     if (score >= 85) return "CRITICAL";
@@ -72,7 +70,9 @@ export function TradeDesk({
             futures: row.futures,
             priceChangePct: metrics.priceChangePct,
             reversalScore: pos.side === "LONG" ? row.reversal?.bearish : row.reversal?.bullish,
-            trendScore: (row.long?.breakdown.trend4h ?? 0) + (row.long?.breakdown.trend1h ?? 0),
+            trendScore:
+              ((pos.side === "LONG" ? row.long : row.short)?.breakdown.trend4h ?? 0) +
+              ((pos.side === "LONG" ? row.long : row.short)?.breakdown.trend1h ?? 0),
           })
         : null;
       return { pos, row, current, metrics, exit };
@@ -99,11 +99,15 @@ export function TradeDesk({
     if (!ranked.length) return;
     const next: AppAlert[] = [];
     const now = Date.now();
+    const activeKeys = new Set<string>();
+    const intensityRank = { INFO: 1, WATCH: 2, WARNING: 3, HIGH: 4, CRITICAL: 5 };
     const push = (alert: Omit<AppAlert, "id" | "time">) => {
       const key = `${alert.symbol}:${alert.type}:${alert.title}`;
-      const last = seen.current.get(key);
-      if (last && now - last < DEDUPE_MS) return;
-      seen.current.set(key, now);
+      activeKeys.add(key);
+      const level = intensityRank[alert.intensity];
+      const previousLevel = seen.current.get(key);
+      if (previousLevel != null && previousLevel >= level) return;
+      seen.current.set(key, level);
       next.push({
         ...alert,
         id: `${key}-${now}`,
@@ -181,6 +185,10 @@ export function TradeDesk({
         title,
         reasons: item.exit.reasons,
       });
+    }
+
+    for (const key of seen.current.keys()) {
+      if (!activeKeys.has(key)) seen.current.delete(key);
     }
 
     if (!next.length) return;

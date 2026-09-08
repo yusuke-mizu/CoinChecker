@@ -7,8 +7,13 @@ import { applyRanks, topLong, topReversal, topShort, topTiming } from "@/lib/sco
 import { DATA_SOURCE_NOTES, DISCLAIMER } from "@/lib/analysis/notes";
 import { failedCandidateAnalysis, listedWithoutPublicPerp } from "@/lib/analysis/listed-only";
 import { readApiJson } from "@/lib/client/api-json";
+import {
+  DEFAULT_SIGNAL_SETTINGS,
+  toSignalObservation,
+} from "@/lib/scoring/signal-tracking";
 import type { BtccCandidate, TickerSnapshot, PerpetualContract } from "@/lib/types/market";
 import type { CandleVenue } from "@/lib/types/venue";
+import type { SignalSettings as SignalSettingsType, TrackedSignal } from "@/lib/types/signals";
 import type {
   MarketEnvSnapshot,
   MarketRisk,
@@ -17,6 +22,9 @@ import type {
 import { SymbolDetail } from "@/components/SymbolDetail";
 import { TradeDesk } from "@/components/TradeDesk";
 import { BtccUniverseTable } from "@/components/BtccUniverseTable";
+import { NewEntryPanel } from "@/components/NewEntryPanel";
+import { SignalSettings } from "@/components/SignalSettings";
+import { TrackedSignalsPanel } from "@/components/TrackedSignalsPanel";
 import {
   adviceFor,
   macdJa,
@@ -71,6 +79,14 @@ type UniverseResponse = {
   error: string | null;
 };
 
+type SignalsResponse = {
+  success: boolean;
+  settings: SignalSettingsType;
+  signals: TrackedSignal[];
+  updatedAt: string;
+  error?: string;
+};
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -121,8 +137,12 @@ export function Dashboard() {
   const [btccCount, setBtccCount] = useState<number | null>(null);
   const [contracts, setContracts] = useState<Record<string, PerpetualContract>>({});
   const [candidates, setCandidates] = useState<BtccCandidate[]>([]);
+  const [signalSettings, setSignalSettings] = useState(DEFAULT_SIGNAL_SETTINGS);
+  const [trackedSignals, setTrackedSignals] = useState<TrackedSignal[]>([]);
+  const [signalWarning, setSignalWarning] = useState<string | null>(null);
   const abortRef = useRef(false);
   const runningRef = useRef(false);
+  const signalPrioritiesRef = useRef(new Map<string, number>());
 
   const ranked = useMemo(() => applyRanks(rows), [rows]);
   const scoredRows = useMemo(
@@ -165,6 +185,69 @@ export function Dashboard() {
     return [...next].sort((a, b) => dir * compareRows(a, b, sortKey));
   }, [scoredRows, query, filter, sortKey, sortDir]);
 
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/signals", { cache: "no-store" })
+      .then(async (response) => {
+        const json = await readApiJson<SignalsResponse>(response, "GET /api/signals");
+        if (!response.ok) throw new Error(json.error || "Signal Historyの取得に失敗しました");
+        if (!active) return;
+        setSignalSettings(json.settings);
+        setTrackedSignals(json.signals);
+        setSignalWarning(null);
+      })
+      .catch((err: unknown) => {
+        if (active) setSignalWarning(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const levels = {
+      ACTIVE: 1,
+      WEAKENING: 2,
+      REVERSAL: 3,
+      TAKE_PROFIT: 4,
+      STRONG_TAKE_PROFIT: 5,
+      STRONG_EXIT: 6,
+      STOP_LOSS: 7,
+    } as const;
+    for (const signal of trackedSignals) {
+      const current = levels[signal.alertPriority];
+      const previous = signalPrioritiesRef.current.get(signal.id);
+      signalPrioritiesRef.current.set(signal.id, current);
+      if (
+        previous != null &&
+        current > previous &&
+        typeof Notification !== "undefined" &&
+        Notification.permission === "granted"
+      ) {
+        new Notification(`${signal.symbol} ${signal.direction}`, {
+          body: `${signal.status} · Deterioration ${signal.deteriorationScore} · Take Profit ${signal.takeProfitScore}`,
+        });
+      }
+    }
+  }, [trackedSignals]);
+
+  const saveSignalSettings = useCallback(async (settings: SignalSettingsType) => {
+    const response = await fetch("/api/signals", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(settings),
+    });
+    const json = await readApiJson<SignalsResponse>(response, "PATCH /api/signals");
+    if (!response.ok) {
+      const message = json.error || "Signal設定の保存に失敗しました";
+      setSignalWarning(message);
+      throw new Error(message);
+    }
+    setSignalSettings(json.settings);
+    setTrackedSignals(json.signals);
+    setSignalWarning(null);
+  }, []);
+
   const runPhase13 = useCallback(async () => {
     if (runningRef.current) return;
     runningRef.current = true;
@@ -204,8 +287,6 @@ export function Dashboard() {
     setLoading(true);
     setError(null);
     setWarning(null);
-    setRows([]);
-    setSelected(null);
     setProgress({ done: 0, total: 0 });
     try {
       const [universeRes, envRes] = await Promise.all([
@@ -231,8 +312,15 @@ export function Dashboard() {
       if (skipped) {
         setWarning(universe.warning);
       }
-      const symbols = universe.symbols;
-      const venues = universe.venues ?? {};
+      const venues = { ...(universe.venues ?? {}) };
+      const trackedSymbols = trackedSignals
+        .filter((signal) => !["EXPIRED", "INVALIDATED"].includes(signal.status))
+        .filter((signal) => signal.current.marketVenue)
+        .map((signal) => {
+          venues[signal.symbol] = signal.current.marketVenue as CandleVenue;
+          return signal.symbol;
+        });
+      const symbols = [...new Set([...universe.symbols, ...trackedSymbols])];
       const candidateBySymbol = new Map(
         (universe.candidates ?? []).map((candidate) => [candidate.symbol, candidate]),
       );
@@ -268,7 +356,7 @@ export function Dashboard() {
             btc1hCloses: env.btc1hCloses,
             dominancePct: env.dominancePct,
             tickers,
-            venues: universe.venues,
+            venues,
             candidates: batchCandidates,
           }),
         });
@@ -308,14 +396,40 @@ export function Dashboard() {
         setProgress({ done: collected.length, total: symbols.length });
         if (i + BATCH_SIZE < symbols.length) await sleep(350);
       }
-      setUpdatedAt(new Date().toISOString());
+      if (!abortRef.current) {
+        const observations = collected.flatMap((row) =>
+          (["LONG", "SHORT"] as const)
+            .map((direction) => toSignalObservation(row, env, direction))
+            .filter((item): item is NonNullable<typeof item> => item != null),
+        );
+        try {
+          const signalResponse = await fetch("/api/signals", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ observations }),
+          });
+          const signalJson = await readApiJson<SignalsResponse>(
+            signalResponse,
+            "POST /api/signals",
+          );
+          if (!signalResponse.ok) {
+            throw new Error(signalJson.error || "Signal Historyの更新に失敗しました");
+          }
+          setSignalSettings(signalJson.settings);
+          setTrackedSignals(signalJson.signals);
+          setSignalWarning(null);
+        } catch (signalError) {
+          setSignalWarning(signalError instanceof Error ? signalError.message : String(signalError));
+        }
+        setUpdatedAt(new Date().toISOString());
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       runningRef.current = false;
       setLoading(false);
     }
-  }, []);
+  }, [trackedSignals]);
 
   useEffect(() => {
     if (!refreshMin) return;
@@ -403,6 +517,11 @@ export function Dashboard() {
           {warning}
         </div>
       ) : null}
+      {signalWarning ? (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          Signal Trackingは更新できませんでした（分析結果は利用できます）: {signalWarning}
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-5 py-4 text-sm text-zinc-300">
@@ -427,9 +546,23 @@ export function Dashboard() {
 
       {!market && !loading && ranked.length === 0 && candidates.length === 0 ? (
         <div className="rounded-lg border border-dashed border-zinc-800 bg-zinc-900/40 px-5 py-10 text-center text-sm text-zinc-400">
-          「分析開始」でBTCC候補を発見し、同名の補完市場データが十分な銘柄だけを採点します。DB保存はありません。
+          「分析開始」でBTCC候補を発見し、同名の補完市場データが十分な銘柄だけを採点します。
         </div>
       ) : null}
+
+      <SignalSettings
+        key={`${signalSettings.enabled}-${signalSettings.entryThreshold}-${signalSettings.timingThreshold}-${signalSettings.topN}-${signalSettings.durationHours}-${signalSettings.portfolioProtectionCount}`}
+        settings={signalSettings}
+        onSave={saveSignalSettings}
+      />
+      <TrackedSignalsPanel
+        signals={trackedSignals}
+        settings={signalSettings}
+        onSelect={(symbol) => {
+          const row = analysisBySymbol.get(symbol);
+          if (row) setSelected(row);
+        }}
+      />
 
       {market || ranked.length ? (
         <>
@@ -466,7 +599,7 @@ export function Dashboard() {
             <StatusCard
               label="UPDATED"
               value={updatedAt ? new Date(updatedAt).toLocaleTimeString() : "—"}
-              sub={`${scoredRows.length} scoring available · BTCC候補 ${btccCount ?? "—"} · memory only`}
+              sub={`${scoredRows.length} scoring available · BTCC候補 ${btccCount ?? "—"} · Signal metadata: KV`}
             />
           </section>
 
@@ -485,6 +618,8 @@ export function Dashboard() {
               {risk.warning} {risk.reasons.slice(0, 3).join(" / ")}
             </div>
           ) : null}
+
+          <NewEntryPanel rows={scoredRows} settings={signalSettings} onSelect={setSelected} />
 
           <section className="grid gap-4 lg:grid-cols-2">
             <RankList title="買い候補 TOP" rows={longs} accent="emerald" onSelect={setSelected} />
