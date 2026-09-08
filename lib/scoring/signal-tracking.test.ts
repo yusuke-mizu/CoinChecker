@@ -10,11 +10,19 @@ import type { SignalObservation, SignalScoreSnapshot } from "@/lib/types/signals
 
 function snapshot(overrides: Partial<SignalScoreSnapshot> = {}): SignalScoreSnapshot {
   return {
+    scoreModel: "expectancy-v1",
     entry: 85,
     oppositeEntry: 35,
     timing: 82,
     oppositeTiming: 30,
     trend: 78,
+    expectedMove: 80,
+    potentialRewardPct: 6,
+    potentialRiskPct: 3,
+    rewardRisk: 2,
+    chasingPenalty: 10,
+    entryType: "PULLBACK",
+    entryDecision: "ENTRY_NOW",
     range: 20,
     drift: 20,
     driftSide: "up",
@@ -159,5 +167,42 @@ describe("signal lifecycle", () => {
       "2026-09-08T00:00:00.000Z",
     );
     expect(store.signals.map((item) => item.symbol)).toEqual(["ETHUSDT"]);
+  });
+
+  it("records scan-based horizon returns with actual lag", () => {
+    const started = transitionSignalStore(
+      null,
+      [observation()],
+      DEFAULT_SIGNAL_SETTINGS,
+      "2026-09-08T00:00:00.000Z",
+    );
+    const measured = transitionSignalStore(
+      started,
+      [observation("LONG", { price: 105 })],
+      DEFAULT_SIGNAL_SETTINGS,
+      "2026-09-08T01:15:00.000Z",
+    );
+    const oneHour = measured.signals[0].performance.find((item) => item.horizon === "1h");
+    expect(oneHour?.state).toBe("OBSERVED");
+    expect(oneHour?.lagMinutes).toBe(15);
+    expect(oneHour?.returnPct).toBe(5);
+  });
+
+  it("captures a pending 24h outcome before expiring the signal", () => {
+    const started = transitionSignalStore(
+      null,
+      [observation()],
+      DEFAULT_SIGNAL_SETTINGS,
+      "2026-09-08T00:00:00.000Z",
+    );
+    const measured = transitionSignalStore(
+      started,
+      [observation("LONG", { price: 103 })],
+      DEFAULT_SIGNAL_SETTINGS,
+      "2026-09-09T00:10:00.000Z",
+    );
+    const day = measured.signals[0].performance.find((item) => item.horizon === "24h");
+    expect(day?.state).toBe("OBSERVED");
+    expect(measured.signals[0].status).toBe("EXPIRED");
   });
 });

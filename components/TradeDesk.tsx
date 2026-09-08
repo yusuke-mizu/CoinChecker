@@ -116,24 +116,24 @@ export function TradeDesk({
     };
 
     for (const row of ranked) {
-      if ((row.long?.total ?? 0) >= 80 && (row.difference ?? 0) > 12) {
+      if ((row.entryExpectancy.long?.total ?? 0) >= 80 && (row.difference ?? 0) > 12) {
         push({
           symbol: row.symbol,
           display: row.display,
           type: "ENTRY",
-          score: row.long?.total ?? 0,
-          intensity: intensityFromScore(row.long?.total ?? 0, "ENTRY"),
+          score: row.entryExpectancy.long?.total ?? 0,
+          intensity: intensityFromScore(row.entryExpectancy.long?.total ?? 0, "ENTRY"),
           title: "買い 強め（検討）",
           reasons: row.long?.items.slice(0, 4).map((i) => i.reason) ?? [],
         });
       }
-      if ((row.short?.total ?? 0) >= 80 && (row.difference ?? 0) < -12) {
+      if ((row.entryExpectancy.short?.total ?? 0) >= 80 && (row.difference ?? 0) < -12) {
         push({
           symbol: row.symbol,
           display: row.display,
           type: "ENTRY",
-          score: row.short?.total ?? 0,
-          intensity: intensityFromScore(row.short?.total ?? 0, "ENTRY"),
+          score: row.entryExpectancy.short?.total ?? 0,
+          intensity: intensityFromScore(row.entryExpectancy.short?.total ?? 0, "ENTRY"),
           title: "売り 強め（検討）",
           reasons: row.short?.items.slice(0, 4).map((i) => i.reason) ?? [],
         });

@@ -1,7 +1,7 @@
 import "server-only";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { DEFAULT_SIGNAL_SETTINGS } from "@/lib/scoring/signal-tracking";
-import type { SignalStoreDocument } from "@/lib/types/signals";
+import type { SignalScoreSnapshot, SignalStoreDocument } from "@/lib/types/signals";
 
 const STORE_KEY = "signals:v1:shared";
 const STORE_TTL_SECONDS = 15 * 24 * 60 * 60;
@@ -21,6 +21,20 @@ export function emptySignalStore(now = new Date().toISOString()): SignalStoreDoc
   };
 }
 
+function normalizeSnapshot(snapshot: SignalScoreSnapshot): SignalScoreSnapshot {
+  return {
+    ...snapshot,
+    scoreModel: snapshot.scoreModel ?? "legacy-v1",
+    expectedMove: snapshot.expectedMove ?? 0,
+    potentialRewardPct: snapshot.potentialRewardPct ?? 0,
+    potentialRiskPct: snapshot.potentialRiskPct ?? 0,
+    rewardRisk: snapshot.rewardRisk ?? 0,
+    chasingPenalty: snapshot.chasingPenalty ?? 0,
+    entryType: snapshot.entryType ?? "NO_ENTRY",
+    entryDecision: snapshot.entryDecision ?? "NO_ENTRY",
+  };
+}
+
 export async function readSignalStore(): Promise<SignalStoreDocument> {
   const stored = await signalKv().get<SignalStoreDocument>(STORE_KEY, "json");
   if (
@@ -31,7 +45,16 @@ export async function readSignalStore(): Promise<SignalStoreDocument> {
   ) {
     return emptySignalStore();
   }
-  return stored;
+  return {
+    ...stored,
+    settings: { ...DEFAULT_SIGNAL_SETTINGS, ...stored.settings },
+    signals: stored.signals.map((signal) => ({
+      ...signal,
+      baseline: normalizeSnapshot(signal.baseline),
+      current: normalizeSnapshot(signal.current),
+      performance: signal.performance ?? [],
+    })),
+  };
 }
 
 export async function writeSignalStore(document: SignalStoreDocument): Promise<void> {

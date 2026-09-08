@@ -1,11 +1,21 @@
 import type { SymbolAnalysis } from "@/lib/types/scoring";
 
 function byLong(a: SymbolAnalysis, b: SymbolAnalysis): number {
-  return (b.long?.total ?? -1) - (a.long?.total ?? -1);
+  return (
+    (b.entryExpectancy.long?.total ?? -1) - (a.entryExpectancy.long?.total ?? -1) ||
+    (b.entryExpectancy.long?.expectedMoveScore ?? -1) -
+      (a.entryExpectancy.long?.expectedMoveScore ?? -1) ||
+    a.symbol.localeCompare(b.symbol)
+  );
 }
 
 function byShort(a: SymbolAnalysis, b: SymbolAnalysis): number {
-  return (b.short?.total ?? -1) - (a.short?.total ?? -1);
+  return (
+    (b.entryExpectancy.short?.total ?? -1) - (a.entryExpectancy.short?.total ?? -1) ||
+    (b.entryExpectancy.short?.expectedMoveScore ?? -1) -
+      (a.entryExpectancy.short?.expectedMoveScore ?? -1) ||
+    a.symbol.localeCompare(b.symbol)
+  );
 }
 
 export function applyRanks(rows: SymbolAnalysis[]): SymbolAnalysis[] {
@@ -14,8 +24,8 @@ export function applyRanks(rows: SymbolAnalysis[]): SymbolAnalysis[] {
       row.availability === "SCORING_AVAILABLE" &&
       row.rankingEligible &&
       row.status === "ok" &&
-      row.long &&
-      row.short,
+      row.entryExpectancy.long &&
+      row.entryExpectancy.short,
   );
   const longOrder = [...scored].sort(byLong);
   const shortOrder = [...scored].sort(byShort);
@@ -30,14 +40,14 @@ export function applyRanks(rows: SymbolAnalysis[]): SymbolAnalysis[] {
 
 export function topLong(rows: SymbolAnalysis[], limit = 5): SymbolAnalysis[] {
   return [...rows]
-    .filter((row) => row.rankingEligible && row.availability === "SCORING_AVAILABLE" && row.long)
+    .filter((row) => row.rankingEligible && row.availability === "SCORING_AVAILABLE" && row.entryExpectancy.long)
     .sort(byLong)
     .slice(0, limit);
 }
 
 export function topShort(rows: SymbolAnalysis[], limit = 5): SymbolAnalysis[] {
   return [...rows]
-    .filter((row) => row.rankingEligible && row.availability === "SCORING_AVAILABLE" && row.short)
+    .filter((row) => row.rankingEligible && row.availability === "SCORING_AVAILABLE" && row.entryExpectancy.short)
     .sort(byShort)
     .slice(0, limit);
 }

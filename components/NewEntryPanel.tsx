@@ -17,15 +17,27 @@ export function NewEntryPanel({
     .flatMap((row) => {
       const direction = dominantDirection(row);
       if (!direction || row.regime?.regime === "RANGING") return [];
-      const entry = direction === "LONG" ? row.long?.total : row.short?.total;
-      const timing = direction === "LONG" ? row.timing?.long : row.timing?.short;
+      const assessment =
+        direction === "LONG" ? row.entryExpectancy.long : row.entryExpectancy.short;
+      if (!assessment) return [];
+      const entry = assessment?.total;
+      const timing = assessment?.timingScore;
       if (
         entry == null ||
         timing == null ||
-        entry < settings.entryThreshold ||
-        timing < settings.timingThreshold
+        entry < settings.watchEntryThreshold
       ) return [];
-      return [{ row, direction, entry, timing }];
+      const configuredDecision = assessment.decision.startsWith("WAIT_")
+        ? assessment.decision.replaceAll("_", " ")
+        : entry >= settings.strongEntryThreshold &&
+            assessment.expectedMoveScore >= 65 &&
+            timing >= settings.timingThreshold &&
+            assessment.reversalRisk <= 35
+          ? "STRONG ENTRY"
+          : entry >= settings.watchEntryThreshold
+            ? "ENTRY WATCH"
+            : "NO ENTRY";
+      return [{ row, direction, entry, timing, assessment, configuredDecision }];
     })
     .sort((a, b) => b.entry - a.entry || b.timing - a.timing)
     .slice(0, settings.topN ?? undefined);
@@ -38,11 +50,11 @@ export function NewEntryPanel({
           <h2 className="mt-1 text-sm font-semibold text-zinc-100">現在の新規エントリー候補</h2>
         </div>
         <p className="text-[11px] text-zinc-500">
-          Entry {settings.entryThreshold}+ / Timing {settings.timingThreshold}+ / RANGE除外
+          STRONG {settings.strongEntryThreshold}+ / WATCH {settings.watchEntryThreshold}+ / RANGE除外
         </p>
       </div>
       <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        {entries.length ? entries.map(({ row, direction, entry, timing }) => (
+        {entries.length ? entries.map(({ row, direction, entry, timing, assessment, configuredDecision }) => (
           <button
             key={`${row.symbol}-${direction}`}
             type="button"
@@ -59,9 +71,18 @@ export function NewEntryPanel({
               Entry <b className="font-mono text-zinc-200">{entry}</b> · Timing{" "}
               <b className="font-mono text-zinc-200">{timing}</b>
             </span>
+            <span className="mt-1 block text-[11px] text-zinc-500">
+              R/R {assessment.rewardRisk.toFixed(2)} · Move {assessment.potentialRewardPct.toFixed(2)}%
+              {" "}· {assessment.entryType} · {configuredDecision}
+            </span>
+            {assessment.lateEntryWarning ? (
+              <span className="mt-1 block text-[10px] text-amber-300">
+                STRONG TREND / LATE ENTRY
+              </span>
+            ) : null}
           </button>
         )) : (
-          <p className="text-xs text-zinc-500">現在、設定条件を満たす候補はありません。</p>
+          <p className="text-xs text-zinc-500">NO HIGH EXPECTANCY ENTRY — 現在、条件を満たす候補はありません。</p>
         )}
       </div>
     </section>

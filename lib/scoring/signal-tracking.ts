@@ -4,6 +4,8 @@ import type {
   SignalAlertPriority,
   SignalDirection,
   SignalObservation,
+  SignalPerformanceCheckpoint,
+  SignalPerformanceHorizon,
   SignalScoreSnapshot,
   SignalSettings,
   SignalStatus,
@@ -17,10 +19,13 @@ const TERMINAL_RETENTION_MS = 7 * 24 * 60 * 60_000;
 export const DEFAULT_SIGNAL_SETTINGS: SignalSettings = {
   enabled: true,
   entryThreshold: 75,
+  strongEntryThreshold: 80,
+  watchEntryThreshold: 65,
   timingThreshold: 70,
   topN: 10,
   durationHours: 24,
   portfolioProtectionCount: 2,
+  setLeverage: 1,
 };
 
 function clamp(value: number): number {
@@ -30,11 +35,15 @@ function clamp(value: number): number {
 function sideValues(row: SymbolAnalysis, direction: SignalDirection) {
   const own = direction === "LONG" ? row.long : row.short;
   const opposite = direction === "LONG" ? row.short : row.long;
+  const expectancy =
+    direction === "LONG" ? row.entryExpectancy.long : row.entryExpectancy.short;
+  const oppositeExpectancy =
+    direction === "LONG" ? row.entryExpectancy.short : row.entryExpectancy.long;
   return {
     own,
     opposite,
-    timing: direction === "LONG" ? row.timing?.long : row.timing?.short,
-    oppositeTiming: direction === "LONG" ? row.timing?.short : row.timing?.long,
+    expectancy,
+    oppositeExpectancy,
     reversal: direction === "LONG" ? row.reversal?.bearish : row.reversal?.bullish,
   };
 }
@@ -61,8 +70,8 @@ export function toSignalObservation(
     !row.rankingEligible ||
     !side.own ||
     !side.opposite ||
-    side.timing == null ||
-    side.oppositeTiming == null ||
+    !side.expectancy ||
+    !side.oppositeExpectancy ||
     side.reversal == null ||
     price == null ||
     price <= 0
@@ -89,11 +98,19 @@ export function toSignalObservation(
     trendScore: side.own.breakdown.trend4h + side.own.breakdown.trend1h,
   });
   const snapshot: SignalScoreSnapshot = {
-    entry: side.own.total,
-    oppositeEntry: side.opposite.total,
-    timing: side.timing,
-    oppositeTiming: side.oppositeTiming,
-    trend: row.regime?.trendScore ?? 0,
+    scoreModel: "expectancy-v1",
+    entry: side.expectancy.total,
+    oppositeEntry: side.oppositeExpectancy.total,
+    timing: side.expectancy.timingScore,
+    oppositeTiming: side.oppositeExpectancy.timingScore,
+    trend: side.expectancy.trendQuality,
+    expectedMove: side.expectancy.expectedMoveScore,
+    potentialRewardPct: side.expectancy.potentialRewardPct,
+    potentialRiskPct: side.expectancy.potentialRiskPct,
+    rewardRisk: side.expectancy.rewardRisk,
+    chasingPenalty: side.expectancy.chasingPenalty,
+    entryType: side.expectancy.entryType,
+    entryDecision: side.expectancy.decision,
     range: row.regime?.rangeScore ?? 0,
     drift: row.regime?.driftScore ?? 0,
     driftSide: row.regime?.driftSide ?? "none",
@@ -222,10 +239,13 @@ function statusFor(input: {
   ) {
     return { status: "STOP_LOSS_WATCH", priority: "STOP_LOSS" };
   }
-  if (oppositeQualified || (deterioration >= 90 && current.exitAlert >= 70)) {
+  if (
+    (oppositeQualified && current.exitAlert >= 70) ||
+    (current.reversal >= 90 && current.exitAlert >= 80)
+  ) {
     return { status: "INVALIDATED", priority: "STRONG_EXIT" };
   }
-  if (current.exitAlert >= 85 || deterioration >= 80) {
+  if (current.exitAlert >= 85) {
     return { status: "EXIT_WATCH", priority: "STRONG_EXIT" };
   }
   if (takeProfit >= 80) {
@@ -256,6 +276,68 @@ function appendEvent(
   return [...signal.events, { at: now, from: signal.status, to: nextStatus }].slice(-MAX_EVENTS);
 }
 
+const PERFORMANCE_WINDOWS: Record<
+  SignalPerformanceHorizon,
+  { hours: number; toleranceMinutes: number }
+> = {
+  "1h": { hours: 1, toleranceMinutes: 45 },
+  "4h": { hours: 4, toleranceMinutes: 60 },
+  "12h": { hours: 12, toleranceMinutes: 180 },
+  "24h": { hours: 24, toleranceMinutes: 360 },
+};
+
+function newPerformance(createdAt: string): SignalPerformanceCheckpoint[] {
+  const created = Date.parse(createdAt);
+  return (Object.entries(PERFORMANCE_WINDOWS) as Array<
+    [SignalPerformanceHorizon, { hours: number; toleranceMinutes: number }]
+  >).map(([horizon, window]) => ({
+    horizon,
+    targetAt: new Date(created + window.hours * 60 * 60_000).toISOString(),
+    sampledAt: null,
+    lagMinutes: null,
+    sampledPrice: null,
+    returnPct: null,
+    state: "PENDING",
+  }));
+}
+
+function updatePerformance(
+  signal: TrackedSignal,
+  observation: SignalObservation | undefined,
+  now: string,
+): SignalPerformanceCheckpoint[] {
+  const currentPrice = observation?.snapshot?.price;
+  const nowMs = Date.parse(now);
+  const checkpoints = signal.performance?.length
+    ? signal.performance
+    : newPerformance(signal.createdAt);
+  return checkpoints.map((checkpoint) => {
+    if (checkpoint.state !== "PENDING") return checkpoint;
+    const targetMs = Date.parse(checkpoint.targetAt);
+    if (nowMs < targetMs) return checkpoint;
+    const window = PERFORMANCE_WINDOWS[checkpoint.horizon];
+    const lagMinutes = Math.round((nowMs - targetMs) / 60_000);
+    if (currentPrice != null && lagMinutes <= window.toleranceMinutes) {
+      return {
+        ...checkpoint,
+        sampledAt: now,
+        lagMinutes,
+        sampledPrice: currentPrice,
+        returnPct: priceChangeSinceSignal(
+          signal.direction,
+          signal.baseline.price,
+          currentPrice,
+        ),
+        state: "OBSERVED",
+      };
+    }
+    if (lagMinutes > window.toleranceMinutes) {
+      return { ...checkpoint, lagMinutes, state: "MISSED" };
+    }
+    return checkpoint;
+  });
+}
+
 export function transitionSignalStore(
   previous: SignalStoreDocument | null,
   observations: SignalObservation[],
@@ -269,6 +351,11 @@ export function transitionSignalStore(
   const updated: TrackedSignal[] = [];
 
   for (const signal of previous?.signals ?? []) {
+    const observation = byKey.get(`${signal.symbol}:${signal.direction}`);
+    const withPerformance = {
+      ...signal,
+      performance: updatePerformance(signal, observation, now),
+    };
     if (
       ["EXPIRED", "INVALIDATED"].includes(signal.status) &&
       nowMs - Date.parse(signal.lastEvaluatedAt) > TERMINAL_RETENTION_MS
@@ -277,7 +364,7 @@ export function transitionSignalStore(
     }
     if (nowMs >= Date.parse(signal.expiresAt) && signal.status !== "INVALIDATED") {
       updated.push({
-        ...signal,
+        ...withPerformance,
         status: "EXPIRED",
         alertPriority: "ACTIVE",
         events: appendEvent(signal, "EXPIRED", now),
@@ -285,23 +372,30 @@ export function transitionSignalStore(
       continue;
     }
     if (["EXPIRED", "INVALIDATED"].includes(signal.status)) {
-      updated.push(signal);
+      updated.push(withPerformance);
       continue;
     }
 
-    const observation = byKey.get(`${signal.symbol}:${signal.direction}`);
     if (!observation?.snapshot) {
-      updated.push({ ...signal, evaluationState: "DATA_UNAVAILABLE" });
+      updated.push({ ...withPerformance, evaluationState: "DATA_UNAVAILABLE" });
       continue;
     }
     const current = observation.snapshot;
+    const baseline =
+      signal.baseline.scoreModel === "expectancy-v1"
+        ? signal.baseline
+        : {
+            ...current,
+            price: signal.baseline.price,
+            observedAt: signal.baseline.observedAt,
+          };
     const priceChangePct = priceChangeSinceSignal(
       signal.direction,
-      signal.baseline.price,
+      baseline.price,
       current.price,
     );
     const peakFavorablePct = Math.max(signal.peakFavorablePct, priceChangePct, 0);
-    const deterioration = scoreDeterioration(signal.baseline, current, signal.direction);
+    const deterioration = scoreDeterioration(baseline, current, signal.direction);
     const takeProfit = scoreTakeProfit({
       priceChangePct,
       peakFavorablePct,
@@ -311,15 +405,16 @@ export function transitionSignalStore(
     });
     const next = statusFor({
       settings,
-      baseline: signal.baseline,
+      baseline,
       current,
       priceChangePct,
       deterioration,
       takeProfit,
     });
     updated.push({
-      ...signal,
+      ...withPerformance,
       display: observation.display,
+      baseline,
       current,
       lastEvaluatedAt: now,
       lastQualifiedAt: qualifiesForTracking(observation, settings)
@@ -375,6 +470,7 @@ export function transitionSignalStore(
       status: "NEW",
       alertPriority: "ACTIVE",
       events: [{ at: now, from: null, to: "NEW" }],
+      performance: newPerformance(now),
     });
     existingKeys.add(key);
   }

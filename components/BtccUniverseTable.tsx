@@ -141,8 +141,8 @@ function CandidateTable({
                   <td className="px-2 py-2 font-mono">
                     {quality.score} <span className="text-zinc-500">/100 {quality.band}</span>
                   </td>
-                  <td className="px-2 py-2 font-mono text-emerald-300">{analysis?.long?.total ?? "N/A"}</td>
-                  <td className="px-2 py-2 font-mono text-rose-300">{analysis?.short?.total ?? "N/A"}</td>
+                  <td className="px-2 py-2 font-mono text-emerald-300">{analysis?.entryExpectancy.long?.total ?? "N/A"}</td>
+                  <td className="px-2 py-2 font-mono text-rose-300">{analysis?.entryExpectancy.short?.total ?? "N/A"}</td>
                   <td className="px-2 py-2 font-mono">{analysis?.timing?.score ?? "N/A"}</td>
                   <td className="px-2 py-2 text-[10px]">
                     {availability === "SCORING_AVAILABLE"

@@ -51,4 +51,29 @@ export function btcReturnCorrelation(
   return pearson(a.slice(-m), b.slice(-m));
 }
 
+/** OLS beta of overlapping 1H returns against BTC; null when variance is insufficient. */
+export function btcReturnBeta(
+  symbolCloses: number[],
+  btcCloses: number[],
+  lookback = 48,
+): number | null {
+  const n = Math.min(symbolCloses.length, btcCloses.length, lookback + 1);
+  if (n < 20) return null;
+  const symbolReturns = toReturns(symbolCloses.slice(-n));
+  const btcReturns = toReturns(btcCloses.slice(-n));
+  const count = Math.min(symbolReturns.length, btcReturns.length);
+  const xs = symbolReturns.slice(-count);
+  const ys = btcReturns.slice(-count);
+  const meanX = xs.reduce((sum, value) => sum + value, 0) / count;
+  const meanY = ys.reduce((sum, value) => sum + value, 0) / count;
+  const covariance = xs.reduce(
+    (sum, value, index) => sum + (value - meanX) * (ys[index] - meanY),
+    0,
+  );
+  const btcVariance = ys.reduce((sum, value) => sum + (value - meanY) ** 2, 0);
+  if (btcVariance <= 0) return null;
+  const beta = covariance / btcVariance;
+  return Number.isFinite(beta) ? Math.max(-5, Math.min(5, beta)) : null;
+}
+
 export const HIGH_BTC_CORR = 0.75;

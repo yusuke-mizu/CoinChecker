@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { buildBalancedSignalSet } from "@/lib/scoring/signal-sets";
+import { buildExpectedValueSets } from "@/lib/scoring/signal-sets";
 import type { SignalSettings, SignalStatus, TrackedSignal } from "@/lib/types/signals";
 
 const PRIORITY = {
@@ -65,9 +65,9 @@ export function TrackedSignalsPanel({
     ),
     [signals],
   );
-  const set = useMemo(
-    () => buildBalancedSignalSet(signals, settings.portfolioProtectionCount),
-    [signals, settings.portfolioProtectionCount],
+  const sets = useMemo(
+    () => buildExpectedValueSets(signals, settings.portfolioProtectionCount, settings.setLeverage),
+    [signals, settings.portfolioProtectionCount, settings.setLeverage],
   );
 
   return (
@@ -80,21 +80,34 @@ export function TrackedSignalsPanel({
         </p>
       </div>
 
-      {set ? (
-        <div className="rounded-md border border-zinc-700 bg-zinc-950 p-3 text-xs">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <b>{set.name}</b>
-            <span>SET STATUS {set.status}</span>
-          </div>
-          <p className="mt-2 text-zinc-400">
-            {set.members.map((item) => `${item.symbol} ${item.direction}`).join(" / ")}
-          </p>
-          <p className="mt-1 text-zinc-400">
-            TAKE PROFIT RISK {set.takeProfitRisk} · EXIT RISK {set.exitRisk} · CORRELATION RISK {set.correlationRisk}
-          </p>
-          {set.profitProtection ? (
-            <p className="mt-2 font-semibold text-amber-300">PORTFOLIO PROFIT PROTECTION / 利益保護を検討</p>
-          ) : null}
+      {sets.length ? (
+        <div className="grid gap-2 lg:grid-cols-3">
+          {sets.map((set) => (
+            <div key={set.name} className="rounded-md border border-zinc-700 bg-zinc-950 p-3 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <b>{set.name}</b>
+                <span>Score {set.setScore}</span>
+              </div>
+              <p className="mt-2 text-zinc-400">
+                {set.members.map((item) => `${item.symbol} ${item.direction}`).join(" / ")}
+              </p>
+              <p className="mt-1 text-zinc-400">
+                THEORETICAL MOVE +{set.expectedRewardPct.toFixed(2)}% / -{set.expectedRiskPct.toFixed(2)}%
+                {" "}· R/R {set.rewardRisk.toFixed(2)}
+              </p>
+              <p className="mt-1 text-zinc-400">
+                LONG {set.longExposurePct.toFixed(0)}% · SHORT {set.shortExposurePct.toFixed(0)}%
+                {" "}· NET {set.netExposurePct >= 0 ? "+" : ""}{set.netExposurePct.toFixed(0)}%
+              </p>
+              <p className="mt-1 text-zinc-400">
+                CORRELATION {set.correlationRisk} · REVERSAL {set.reversalRisk.toFixed(0)}
+                {" "}· STRESS {set.stressLevel} · QUALITY {set.dataQuality.toFixed(0)} · {set.leverage}x Risk
+              </p>
+              {set.profitProtection ? (
+                <p className="mt-2 font-semibold text-amber-300">PORTFOLIO PROFIT PROTECTION / 利益保護を検討</p>
+              ) : null}
+            </div>
+          ))}
         </div>
       ) : null}
 
@@ -119,6 +132,7 @@ export function TrackedSignalsPanel({
               <span>Reversal {signal.current.reversal}</span>
               <span>Deterioration {signal.deteriorationScore}</span>
               <span>Take Profit {signal.takeProfitScore}</span>
+              <span>R/R {signal.current.rewardRisk.toFixed(2)}</span>
               <span>Data Quality {signal.current.dataQuality}</span>
               <span>Age {age(signal.createdAt)}</span>
             </span>

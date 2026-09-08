@@ -6,6 +6,7 @@ import type { SymbolAnalysis } from "@/lib/types/scoring";
 import { adviceFor, flagJa, futuresJa, macdJa, reversalJa, trendJa } from "@/lib/copy/ja";
 import { CandleChart } from "@/components/CandleChart";
 import { formatNum, formatPct, formatPrice, signalClass } from "@/components/format";
+import type { ExpectedEntryAssessment } from "@/lib/scoring/expected-entry";
 
 export function SymbolDetail({
   row,
@@ -49,9 +50,13 @@ export function SymbolDetail({
               Score represents signal strength, not probability of future price movement.
             </p>
           </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <ExpectancyPanel assessment={row.entryExpectancy.long} />
+            <ExpectancyPanel assessment={row.entryExpectancy.short} />
+          </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-            <Mini label="買い ENTRY" value={row.long?.total} />
-            <Mini label="売り ENTRY" value={row.short?.total} />
+            <Mini label="買い ENTRY" value={row.entryExpectancy.long?.total} />
+            <Mini label="売り ENTRY" value={row.entryExpectancy.short?.total} />
             <Mini label="TIMING" value={row.timing?.score} />
             <Mini label="信頼度" value={row.confidence} />
             <Mini label="DATA QUALITY" value={row.dataQuality.score} />
@@ -98,7 +103,7 @@ export function SymbolDetail({
           ) : null}
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-zinc-400">
-              買い点 {row.long?.total ?? "—"} / 売り点 {row.short?.total ?? "—"} · 差 {row.difference ?? "—"}
+              買い期待値 {row.entryExpectancy.long?.total ?? "—"} / 売り期待値 {row.entryExpectancy.short?.total ?? "—"} · 差 {row.difference ?? "—"}
               · {reversalJa(row.reversal?.signal)}
             </span>
           </div>
@@ -111,19 +116,19 @@ export function SymbolDetail({
           ) : null}
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <ScorePanel title="買いスコア" score={row.long} accent="emerald" />
-            <ScorePanel title="売りスコア" score={row.short} accent="rose" />
+            <ScorePanel title="買い Trend Context" score={row.long} accent="emerald" />
+            <ScorePanel title="売り Trend Context" score={row.short} accent="rose" />
           </div>
 
           {row.long ? (
             <section>
-              <h3 className="text-sm font-semibold text-zinc-200">スコア内訳（買い）</h3>
+              <h3 className="text-sm font-semibold text-zinc-200">旧方向性Context内訳（買い）</h3>
               <Breakdown items={row.long.items} total={row.long.total} />
             </section>
           ) : null}
           {row.short ? (
             <section>
-              <h3 className="text-sm font-semibold text-zinc-200">スコア内訳（売り）</h3>
+              <h3 className="text-sm font-semibold text-zinc-200">旧方向性Context内訳（売り）</h3>
               <Breakdown items={row.short.items} total={row.short.total} />
               {row.short.renormalized ? (
                 <p className="mt-1 text-[11px] text-zinc-500">OI/Funding欠落のためエントリー内訳を再正規化しています。</p>
@@ -216,6 +221,53 @@ export function SymbolDetail({
         </div>
       </div>
     </div>
+  );
+}
+
+function ExpectancyPanel({ assessment }: { assessment: ExpectedEntryAssessment | null }) {
+  if (!assessment) {
+    return <div className="rounded-lg border border-zinc-800 p-3 text-xs text-zinc-500">Expected Entry: N/A</div>;
+  }
+  return (
+    <section className="rounded-lg border border-zinc-800 bg-zinc-900/80 p-3 text-xs">
+      <div className="flex items-center justify-between">
+        <b className={assessment.direction === "LONG" ? "text-emerald-300" : "text-rose-300"}>
+          {assessment.direction} ENTRY SCORE {assessment.total}
+        </b>
+        <span className="text-zinc-400">{assessment.decision.replaceAll("_", " ")}</span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-1 font-mono text-zinc-300">
+        <span>Trend {assessment.trendQuality}</span>
+        <span>Timing {assessment.timingScore}</span>
+        <span>Expected Move {assessment.expectedMoveScore}</span>
+        <span>Reversal Risk {assessment.reversalRisk}</span>
+        <span>Reward +{assessment.potentialRewardPct.toFixed(2)}%</span>
+        <span>Risk -{assessment.potentialRiskPct.toFixed(2)}%</span>
+        <span>R/R {assessment.rewardRisk.toFixed(2)}</span>
+        <span>Chasing {assessment.chasingPenalty}</span>
+        <span>Target {formatPrice(assessment.targetPrice)}</span>
+        <span>Structural Stop {formatPrice(assessment.structuralStopPrice)}</span>
+      </div>
+      <p className="mt-2 text-zinc-400">
+        ENTRY TYPE {assessment.entryType} · THEORETICAL EXPECTED MOVE（過去実績ではありません）
+      </p>
+      {assessment.lateEntryWarning ? (
+        <p className="mt-1 font-semibold text-amber-300">STRONG TREND / LATE ENTRY</p>
+      ) : null}
+      <div className="mt-2 border-t border-zinc-800 pt-2">
+        {assessment.items.map((item) => (
+          <p key={item.key} className="text-zinc-400">
+            {item.label}: +{item.points.toFixed(1)}/{item.weight} · {item.reason}
+          </p>
+        ))}
+        <p className="text-amber-300">Chasing Penalty: -{assessment.chasingPenaltyPoints}</p>
+      </div>
+      <div className="mt-2">
+        <b className="text-zinc-200">WHY ENTRY?</b>
+        {assessment.why.map((reason) => <p key={reason} className="text-zinc-400">✓ {reason}</p>)}
+        {assessment.warnings.map((warning) => <p key={warning} className="text-amber-300">⚠ {warning}</p>)}
+      </div>
+    </section>
   );
 }
 

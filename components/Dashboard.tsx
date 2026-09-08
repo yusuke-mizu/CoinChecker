@@ -25,6 +25,7 @@ import { BtccUniverseTable } from "@/components/BtccUniverseTable";
 import { NewEntryPanel } from "@/components/NewEntryPanel";
 import { SignalSettings } from "@/components/SignalSettings";
 import { TrackedSignalsPanel } from "@/components/TrackedSignalsPanel";
+import { SignalPerformancePanel } from "@/components/SignalPerformancePanel";
 import {
   adviceFor,
   macdJa,
@@ -179,8 +180,8 @@ export function Dashboard() {
     let next = scoredRows;
     const q = query.trim().toUpperCase();
     if (q) next = next.filter((r) => r.symbol.includes(q) || r.display.includes(q));
-    if (filter === "long") next = next.filter((r) => (r.long?.total ?? 0) >= 60 && r.signal.includes("LONG"));
-    if (filter === "short") next = next.filter((r) => (r.short?.total ?? 0) >= 60 && r.signal.includes("SHORT"));
+    if (filter === "long") next = next.filter((r) => (r.entryExpectancy.long?.total ?? 0) >= 60);
+    if (filter === "short") next = next.filter((r) => (r.entryExpectancy.short?.total ?? 0) >= 60);
     const dir = sortDir === "asc" ? 1 : -1;
     return [...next].sort((a, b) => dir * compareRows(a, b, sortKey));
   }, [scoredRows, query, filter, sortKey, sortDir]);
@@ -314,7 +315,11 @@ export function Dashboard() {
       }
       const venues = { ...(universe.venues ?? {}) };
       const trackedSymbols = trackedSignals
-        .filter((signal) => !["EXPIRED", "INVALIDATED"].includes(signal.status))
+        .filter(
+          (signal) =>
+            !["EXPIRED", "INVALIDATED"].includes(signal.status) ||
+            signal.performance?.some((checkpoint) => checkpoint.state === "PENDING"),
+        )
         .filter((signal) => signal.current.marketVenue)
         .map((signal) => {
           venues[signal.symbol] = signal.current.marketVenue as CandleVenue;
@@ -449,6 +454,26 @@ export function Dashboard() {
   }
 
   const btc = market?.btc;
+  const marketBreadth = scoredRows.length
+    ? (scoredRows.filter(
+        (row) =>
+          (row.entryExpectancy.long?.total ?? 0) >
+          (row.entryExpectancy.short?.total ?? 0),
+      ).length /
+        scoredRows.length) *
+      100
+    : null;
+  const averageAtrPct = scoredRows.length
+    ? scoredRows.reduce(
+        (sum, row) =>
+          sum +
+          Math.max(
+            row.entryExpectancy.long?.atrPct ?? 0,
+            row.entryExpectancy.short?.atrPct ?? 0,
+          ),
+        0,
+      ) / scoredRows.length
+    : null;
 
   return (
     <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-5 px-4 py-6 lg:px-6">
@@ -459,7 +484,7 @@ export function Dashboard() {
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-50">Coin Checker</h1>
           <p className="mt-1 max-w-3xl text-sm text-zinc-400">
-            銘柄の強さ（ENTRY）と今のタイミングは別点です。注文・決済はしません。点は一致度であり、上昇確率ではありません。
+            Entryは「今この価格から入る期待値」を評価します。Trendの強さとは別です。注文・決済は行いません。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -551,20 +576,11 @@ export function Dashboard() {
       ) : null}
 
       <SignalSettings
-        key={`${signalSettings.enabled}-${signalSettings.entryThreshold}-${signalSettings.timingThreshold}-${signalSettings.topN}-${signalSettings.durationHours}-${signalSettings.portfolioProtectionCount}`}
+        key={`${signalSettings.enabled}-${signalSettings.entryThreshold}-${signalSettings.strongEntryThreshold}-${signalSettings.watchEntryThreshold}-${signalSettings.timingThreshold}-${signalSettings.topN}-${signalSettings.durationHours}-${signalSettings.portfolioProtectionCount}-${signalSettings.setLeverage}`}
         settings={signalSettings}
         onSave={saveSignalSettings}
       />
-      <TrackedSignalsPanel
-        signals={trackedSignals}
-        settings={signalSettings}
-        onSelect={(symbol) => {
-          const row = analysisBySymbol.get(symbol);
-          if (row) setSelected(row);
-        }}
-      />
-
-      {market || ranked.length ? (
+      {market || ranked.length || trackedSignals.length ? (
         <>
           <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             <StatusCard
@@ -575,7 +591,7 @@ export function Dashboard() {
             />
             <StatusCard
               label="MARKET REGIME"
-              value={btc?.regime?.regime ?? "—"}
+              value={btc?.regime ? `${btc.regime.regime}_${btc.regime.direction}` : "—"}
               sub={`Trend ${btc?.regime?.trendScore ?? "—"} · Range ${btc?.regime?.rangeScore ?? "—"} · Drift ${btc?.regime?.driftScore ?? "—"}`}
             />
             <StatusCard
@@ -588,7 +604,11 @@ export function Dashboard() {
               value={market?.dominancePct != null ? `${market.dominancePct.toFixed(1)}%` : "—"}
               sub={market?.dominanceNote ?? "CoinGecko /global"}
             />
-            <StatusCard label="DXY / NASDAQ / 10Y" value="—" sub="公式の無料API未配線（0点）" />
+            <StatusCard
+              label="MARKET BREADTH"
+              value={marketBreadth == null ? "—" : `${marketBreadth.toFixed(0)}% LONG`}
+              sub={averageAtrPct == null ? "Volatility N/A" : `Average 1H ATR ${averageAtrPct.toFixed(2)}%`}
+            />
             <div className={`rounded-lg border p-4 ${risk ? riskClass(risk.level) : "border-zinc-800 bg-zinc-900/80"}`}>
               <div className="text-[11px] tracking-[0.16em] opacity-80">市場リスク</div>
               <div className="mt-1 font-mono text-xl">
@@ -620,6 +640,15 @@ export function Dashboard() {
           ) : null}
 
           <NewEntryPanel rows={scoredRows} settings={signalSettings} onSelect={setSelected} />
+          <TrackedSignalsPanel
+            signals={trackedSignals}
+            settings={signalSettings}
+            onSelect={(symbol) => {
+              const row = analysisBySymbol.get(symbol);
+              if (row) setSelected(row);
+            }}
+          />
+          <SignalPerformancePanel signals={trackedSignals} />
 
           <section className="grid gap-4 lg:grid-cols-2">
             <RankList title="買い候補 TOP" rows={longs} accent="emerald" onSelect={setSelected} />
@@ -680,7 +709,7 @@ export function Dashboard() {
                   <Th label="売り点" onClick={() => toggleSort("short")} />
                   <th className="px-2 py-2 font-medium">タイミング</th>
                   <th className="px-2 py-2 font-medium">Regime</th>
-                  <th className="px-2 py-2 font-medium">先物</th>
+                  <th className="px-2 py-2 font-medium">Best R/R</th>
                   <Th label="4時間" onClick={() => toggleSort("trend4h")} />
                   <th className="px-2 py-2 font-medium">1時間</th>
                   <th className="px-2 py-2 font-medium">15分</th>
@@ -720,11 +749,16 @@ export function Dashboard() {
                       >
                         {formatPct(row.ticker?.change24hPct)}
                       </td>
-                      <td className="px-2 py-2 font-mono text-emerald-300">{row.long?.total ?? "—"}</td>
-                      <td className="px-2 py-2 font-mono text-rose-300">{row.short?.total ?? "—"}</td>
+                      <td className="px-2 py-2 font-mono text-emerald-300">{row.entryExpectancy.long?.total ?? "—"}</td>
+                      <td className="px-2 py-2 font-mono text-rose-300">{row.entryExpectancy.short?.total ?? "—"}</td>
                       <td className="px-2 py-2 font-mono">{row.timing?.score ?? "—"}</td>
                       <td className="px-2 py-2 text-[10px]">{row.regime?.regime ?? "—"}</td>
-                      <td className="px-2 py-2 font-mono">{row.futures?.score ?? "—"}</td>
+                      <td className="px-2 py-2 font-mono">
+                        {Math.max(
+                          row.entryExpectancy.long?.rewardRisk ?? 0,
+                          row.entryExpectancy.short?.rewardRisk ?? 0,
+                        ).toFixed(2)}
+                      </td>
                       <td className="px-2 py-2">{trendJa(row.indicators["4h"]?.trend)}</td>
                       <td className="px-2 py-2">{trendJa(row.indicators["1h"]?.trend)}</td>
                       <td className="px-2 py-2">{trendJa(row.indicators["15m"]?.trend)}</td>
@@ -821,8 +855,8 @@ function RankList({
                   : score === "timing"
                     ? row.timing?.score
                     : accent === "emerald"
-                      ? row.long?.total
-                      : row.short?.total;
+                      ? row.entryExpectancy.long?.total
+                      : row.entryExpectancy.short?.total;
             const badge =
               score === "timing"
                 ? (row.timing?.label ?? adviceFor(row).tag)
@@ -868,9 +902,9 @@ function compareRows(a: SymbolAnalysis, b: SymbolAnalysis, key: SortKey): number
     case "change":
       return (a.ticker?.change24hPct ?? -999) - (b.ticker?.change24hPct ?? -999);
     case "long":
-      return (a.long?.total ?? -1) - (b.long?.total ?? -1);
+      return (a.entryExpectancy.long?.total ?? -1) - (b.entryExpectancy.long?.total ?? -1);
     case "short":
-      return (a.short?.total ?? -1) - (b.short?.total ?? -1);
+      return (a.entryExpectancy.short?.total ?? -1) - (b.entryExpectancy.short?.total ?? -1);
     case "diff":
       return (a.difference ?? 0) - (b.difference ?? 0);
     case "trend4h":

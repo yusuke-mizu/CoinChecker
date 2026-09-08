@@ -14,6 +14,7 @@ import type { CandleVenue } from "./venue";
 import type { RegimeSnapshot } from "@/lib/scoring/regime";
 import type { TimingAssessment } from "@/lib/scoring/entry-timing";
 import type { SetupVerdict } from "@/lib/scoring/setup";
+import type { DirectionalExpectedEntry } from "@/lib/scoring/expected-entry";
 
 export type TrendLabel =
   | "Strong Bullish"
@@ -106,6 +107,7 @@ export type SymbolAnalysis = {
   ticker: TickerSnapshot | null;
   long: DirectionScore | null;
   short: DirectionScore | null;
+  entryExpectancy: DirectionalExpectedEntry;
   difference: number | null;
   bias: BiasLabel | null;
   signal: SignalLabel;
@@ -114,6 +116,7 @@ export type SymbolAnalysis = {
   notes: string[];
   dataSource: string;
   btcCorrelation: number | null;
+  btcBeta: number | null;
   rankLong: number | null;
   rankShort: number | null;
   reversal: ReversalAssessment | null;

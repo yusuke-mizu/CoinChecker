@@ -10,6 +10,7 @@ export type MarketRegime =
 
 export type RegimeSnapshot = {
   regime: MarketRegime;
+  direction: "UP" | "DOWN" | "NEUTRAL";
   trendScore: number;
   rangeScore: number;
   driftScore: number;
@@ -137,6 +138,12 @@ export function assessRegime(input: {
 
   return {
     regime,
+    direction:
+      (input.tf4h?.trend.includes("Bull") && input.tf1h?.trend.includes("Bull"))
+        ? "UP"
+        : (input.tf4h?.trend.includes("Bear") && input.tf1h?.trend.includes("Bear"))
+          ? "DOWN"
+          : "NEUTRAL",
     trendScore,
     rangeScore,
     driftScore: drift.score,

@@ -19,6 +19,7 @@ import { classifySignal } from "@/lib/scoring/signal";
 import { scoreReversal } from "@/lib/scoring/reversal";
 import { assessRegime } from "@/lib/scoring/regime";
 import { scoreEntryTiming } from "@/lib/scoring/entry-timing";
+import { scoreExpectedEntry } from "@/lib/scoring/expected-entry";
 import { decideSetup, nextEntryWindow } from "@/lib/scoring/setup";
 import { dataSourceDisplay } from "@/lib/data/provider-mode";
 import { loadFuturesPositioning } from "@/lib/analysis/futures-data";
@@ -26,6 +27,7 @@ import { assessCandleQuality } from "@/lib/scoring/quality";
 import { btcReturnCorrelation, HIGH_BTC_CORR } from "@/lib/correlation/pearson";
 import type {
   BtccCandidate,
+  Candle,
   CoreTimeframe,
   DataIssueCode,
   FeedProvenance,
@@ -94,6 +96,7 @@ function baseAnalysis(
     ticker: null,
     long: null,
     short: null,
+    entryExpectancy: { long: null, short: null },
     difference: null,
     bias: null,
     indicators: {},
@@ -134,6 +137,7 @@ export async function analyzeSymbol(
   }
   const notes: string[] = [`足・建玉: ${VENUE_LABEL[venue]}（BTCC公式足はログイン必須のため未使用）`];
   const indicators: Partial<Record<CoreTimeframe, TimeframeIndicators>> = {};
+  const candlesByTimeframe: Partial<Record<CoreTimeframe, Candle[]>> = {};
   const timeframeQuality: SymbolAnalysis["timeframeQuality"] = {};
   let closes1h: number[] = [];
   const sources: FeedProvenance = candidate
@@ -185,6 +189,7 @@ export async function analyzeSymbol(
       continue;
     }
     indicators[timeframe] = computeTimeframeIndicators(timeframe, candles);
+    candlesByTimeframe[timeframe] = candles;
     if (timeframe === "1h") {
       closes1h = candles.map((c) => c.close);
     }
@@ -250,13 +255,8 @@ export async function analyzeSymbol(
   if (!futures.availableOi) notes.push("OI unavailable");
   if (!futures.availableFunding) notes.push("Funding unavailable");
   const regime = assessRegime({ tf4h, tf1h, tf15m, futures });
-  let long = scoreDirection("long", { market, tf4h, tf1h, tf15m, futures });
-  let short = scoreDirection("short", { market, tf4h, tf1h, tf15m, futures });
-  if (regime.rangeScore >= 80 && !regime.breakout) {
-    long = { ...long, total: Math.round(long.total * 0.5) };
-    short = { ...short, total: Math.round(short.total * 0.5) };
-    notes.push("RANGE — ENTRY SCORE damped (no auto exit)");
-  }
+  const long = scoreDirection("long", { market, tf4h, tf1h, tf15m, futures });
+  const short = scoreDirection("short", { market, tf4h, tf1h, tf15m, futures });
   const reversal = scoreReversal({
     tf4h,
     tf1h,
@@ -264,8 +264,6 @@ export async function analyzeSymbol(
     btc4h: btc4hForMarket,
     futures,
   });
-  const classified = classifySignal(long, short, reversal);
-
   const btcCloses =
     compact === "BTCUSDT" ? closes1h : context.btc1hCloses;
   const btcCorrelation =
@@ -274,7 +272,8 @@ export async function analyzeSymbol(
     notes.push(`High BTC 1H return correlation (${btcCorrelation.toFixed(2)})`);
   }
 
-  const side = (classified.difference ?? 0) >= 0 ? "long" : "short";
+  const directionalDifference = long.total - short.total;
+  const side = directionalDifference >= 0 ? "long" : "short";
   const timing = scoreEntryTiming({
     tf4h,
     tf1h,
@@ -285,9 +284,36 @@ export async function analyzeSymbol(
     btcCorrelation,
     side,
   });
+  const expectedLong = scoreExpectedEntry({
+    direction: "LONG",
+    candles: candlesByTimeframe,
+    indicators,
+    timing,
+    reversal,
+    futures,
+    regime,
+    btc4h: btc4hForMarket,
+    btcCorrelation,
+    dominancePct: context.dominancePct,
+  });
+  const expectedShort = scoreExpectedEntry({
+    direction: "SHORT",
+    candles: candlesByTimeframe,
+    indicators,
+    timing,
+    reversal,
+    futures,
+    regime,
+    btc4h: btc4hForMarket,
+    btcCorrelation,
+    dominancePct: context.dominancePct,
+  });
+  const rankedLong = { ...long, total: expectedLong?.total ?? 0 };
+  const rankedShort = { ...short, total: expectedShort?.total ?? 0 };
+  const classified = classifySignal(rankedLong, rankedShort, reversal);
   const setup = decideSetup({
-    long,
-    short,
+    long: rankedLong,
+    short: rankedShort,
     regime,
     timing,
     reversal,
@@ -314,6 +340,7 @@ export async function analyzeSymbol(
     ticker,
     long,
     short,
+    entryExpectancy: { long: expectedLong, short: expectedShort },
     difference: classified.difference,
     bias: classified.bias,
     signal: classified.signal,

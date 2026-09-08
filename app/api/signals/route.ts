@@ -39,13 +39,21 @@ function parseSnapshot(value: unknown): SignalScoreSnapshot | null {
     value.timing,
     value.oppositeTiming,
     value.trend,
+    value.expectedMove,
     value.range,
     value.drift,
     value.reversal,
     value.dataQuality,
     value.exitAlert,
+    value.chasingPenalty,
   ];
   if (!scored.every(score)) return null;
+  if (value.scoreModel !== "expectancy-v1") return null;
+  for (const metric of [value.potentialRewardPct, value.potentialRiskPct, value.rewardRisk]) {
+    if (typeof metric !== "number" || !Number.isFinite(metric) || metric < 0 || metric > 100) return null;
+  }
+  if (typeof value.entryType !== "string" || value.entryType.length > 40) return null;
+  if (typeof value.entryDecision !== "string" || value.entryDecision.length > 40) return null;
   if (value.futures != null && !score(value.futures)) return null;
   if (typeof value.price !== "number" || !Number.isFinite(value.price) || value.price <= 0) return null;
   if (!["up", "down", "none"].includes(String(value.driftSide))) return null;
@@ -99,6 +107,14 @@ function parseSettings(value: unknown, current: SignalSettings): SignalSettings 
     if (!score(value.entryThreshold)) return null;
     next.entryThreshold = Math.round(value.entryThreshold);
   }
+  if (value.strongEntryThreshold !== undefined) {
+    if (!score(value.strongEntryThreshold)) return null;
+    next.strongEntryThreshold = Math.round(value.strongEntryThreshold);
+  }
+  if (value.watchEntryThreshold !== undefined) {
+    if (!score(value.watchEntryThreshold)) return null;
+    next.watchEntryThreshold = Math.round(value.watchEntryThreshold);
+  }
   if (value.timingThreshold !== undefined) {
     if (!score(value.timingThreshold)) return null;
     next.timingThreshold = Math.round(value.timingThreshold);
@@ -125,6 +141,16 @@ function parseSettings(value: unknown, current: SignalSettings): SignalSettings 
     ) return null;
     next.portfolioProtectionCount = value.portfolioProtectionCount;
   }
+  if (value.setLeverage !== undefined) {
+    if (
+      typeof value.setLeverage !== "number" ||
+      !Number.isInteger(value.setLeverage) ||
+      value.setLeverage < 1 ||
+      value.setLeverage > 20
+    ) return null;
+    next.setLeverage = value.setLeverage;
+  }
+  if (next.strongEntryThreshold <= next.watchEntryThreshold) return null;
   return next;
 }
 

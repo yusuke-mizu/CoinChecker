@@ -24,18 +24,29 @@ export type TrackingDurationHours = 6 | 12 | 24 | 48 | 168;
 export type SignalSettings = {
   enabled: boolean;
   entryThreshold: number;
+  strongEntryThreshold: number;
+  watchEntryThreshold: number;
   timingThreshold: number;
   topN: number | null;
   durationHours: TrackingDurationHours;
   portfolioProtectionCount: number;
+  setLeverage: number;
 };
 
 export type SignalScoreSnapshot = {
+  scoreModel: "legacy-v1" | "expectancy-v1";
   entry: number;
   oppositeEntry: number;
   timing: number;
   oppositeTiming: number;
   trend: number;
+  expectedMove: number;
+  potentialRewardPct: number;
+  potentialRiskPct: number;
+  rewardRisk: number;
+  chasingPenalty: number;
+  entryType: string;
+  entryDecision: string;
   range: number;
   drift: number;
   driftSide: "up" | "down" | "none";
@@ -68,6 +79,17 @@ export type SignalEvent = {
   to: SignalStatus;
 };
 
+export type SignalPerformanceHorizon = "1h" | "4h" | "12h" | "24h";
+export type SignalPerformanceCheckpoint = {
+  horizon: SignalPerformanceHorizon;
+  targetAt: string;
+  sampledAt: string | null;
+  lagMinutes: number | null;
+  sampledPrice: number | null;
+  returnPct: number | null;
+  state: "PENDING" | "OBSERVED" | "MISSED";
+};
+
 export type TrackedSignal = {
   id: string;
   symbol: string;
@@ -87,6 +109,7 @@ export type TrackedSignal = {
   status: SignalStatus;
   alertPriority: SignalAlertPriority;
   events: SignalEvent[];
+  performance: SignalPerformanceCheckpoint[];
 };
 
 export type SignalStoreDocument = {
@@ -97,11 +120,22 @@ export type SignalStoreDocument = {
 };
 
 export type SignalSetCandidate = {
-  name: "BALANCED SET";
+  name: "PROFIT SET" | "BALANCED SET" | "DEFENSIVE SET";
   members: TrackedSignal[];
   status: "ACTIVE" | "WATCH" | "HIGH RISK";
   takeProfitRisk: "LOW" | "MEDIUM" | "HIGH";
   exitRisk: "LOW" | "MEDIUM" | "HIGH";
   correlationRisk: "LOW" | "MEDIUM" | "HIGH";
   profitProtection: boolean;
+  expectedRewardPct: number;
+  expectedRiskPct: number;
+  rewardRisk: number;
+  longExposurePct: number;
+  shortExposurePct: number;
+  netExposurePct: number;
+  reversalRisk: number;
+  dataQuality: number;
+  setScore: number;
+  stressLevel: "LOW" | "MEDIUM" | "HIGH";
+  leverage: number;
 };

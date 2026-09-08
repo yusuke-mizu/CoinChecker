@@ -54,6 +54,28 @@ export function SignalSettings({
           />
         </label>
         <label className="text-[11px] text-zinc-500">
+          STRONG
+          <input
+            className={`${inputClass} ml-2 w-16`}
+            type="number"
+            min={1}
+            max={100}
+            value={draft.strongEntryThreshold}
+            onChange={(event) => setDraft((value) => ({ ...value, strongEntryThreshold: Number(event.target.value) }))}
+          />
+        </label>
+        <label className="text-[11px] text-zinc-500">
+          WATCH
+          <input
+            className={`${inputClass} ml-2 w-16`}
+            type="number"
+            min={0}
+            max={99}
+            value={draft.watchEntryThreshold}
+            onChange={(event) => setDraft((value) => ({ ...value, watchEntryThreshold: Number(event.target.value) }))}
+          />
+        </label>
+        <label className="text-[11px] text-zinc-500">
           Timing閾値
           <input
             className={`${inputClass} ml-2 w-16`}
@@ -107,6 +129,20 @@ export function SignalSettings({
             onChange={(event) => setDraft((value) => ({
               ...value,
               portfolioProtectionCount: Number(event.target.value),
+            }))}
+          />
+        </label>
+        <label className="text-[11px] text-zinc-500">
+          Set Risk倍率
+          <input
+            className={`${inputClass} ml-2 w-16`}
+            type="number"
+            min={1}
+            max={20}
+            value={draft.setLeverage}
+            onChange={(event) => setDraft((value) => ({
+              ...value,
+              setLeverage: Number(event.target.value),
             }))}
           />
         </label>
