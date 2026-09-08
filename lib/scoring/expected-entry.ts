@@ -43,6 +43,8 @@ export type ExpectedEntryAssessment = {
   marketContext: number;
   chasingPenalty: number;
   chasingPenaltyPoints: number;
+  overheatScore: number;
+  oversoldScore: number;
   currentPrice: number;
   targetPrice: number;
   structuralStopPrice: number;
@@ -328,6 +330,41 @@ function chasingScore(input: {
   return { score: Math.round(clamp(score)), reasons };
 }
 
+function pressureScores(input: {
+  current: number;
+  atrValue: number;
+  vwap: number | null;
+  rsi: number | null;
+  stochastic: number | null;
+  bbPosition: number | null;
+  futures: FuturesPositioning | null;
+}): { overheat: number; oversold: number } {
+  const rsi = input.rsi ?? 50;
+  const stochasticValue = input.stochastic ?? 50;
+  const bb = input.bbPosition == null ? 0.5 : clamp(input.bbPosition, -0.25, 1.25);
+  const vwapAtr =
+    input.vwap == null ? 0 : clamp((input.current - input.vwap) / input.atrValue, -3, 3);
+  const funding = input.futures?.fundingPercentile ?? 50;
+  const oiCrowding = clamp(Math.abs(input.futures?.oiChange1hPct ?? 0) * 7, 0, 20);
+  const overheat = clamp(
+    clamp((rsi - 50) * 2) * 0.3 +
+      clamp((stochasticValue - 50) * 2) * 0.15 +
+      clamp(bb * 100) * 0.2 +
+      clamp(50 + vwapAtr * 25) * 0.15 +
+      funding * 0.15 +
+      oiCrowding * 0.05,
+  );
+  const oversold = clamp(
+    clamp((50 - rsi) * 2) * 0.3 +
+      clamp((50 - stochasticValue) * 2) * 0.15 +
+      clamp((1 - bb) * 100) * 0.2 +
+      clamp(50 - vwapAtr * 25) * 0.15 +
+      (100 - funding) * 0.15 +
+      oiCrowding * 0.05,
+  );
+  return { overheat: Math.round(overheat), oversold: Math.round(oversold) };
+}
+
 export function scoreExpectedEntry(input: {
   direction: EntryDirection;
   candles: Partial<Record<CoreTimeframe, Candle[]>>;
@@ -358,6 +395,15 @@ export function scoreExpectedEntry(input: {
   const rawTiming = side === "long" ? input.timing.long : input.timing.short;
   const normalizedTiming = clamp((rawTiming / 88) * 100);
   const stochasticValue = stochastic(candles15m);
+  const pressure = pressureScores({
+    current,
+    atrValue,
+    vwap,
+    rsi: input.indicators["15m"]?.rsi ?? indicator1h?.rsi ?? null,
+    stochastic: stochasticValue,
+    bbPosition,
+    futures: input.futures,
+  });
   const stochasticAdjustment =
     stochasticValue == null
       ? 0
@@ -517,6 +563,8 @@ export function scoreExpectedEntry(input: {
     marketContext,
     chasingPenalty: chasing.score,
     chasingPenaltyPoints,
+    overheatScore: pressure.overheat,
+    oversoldScore: pressure.oversold,
     currentPrice: current,
     targetPrice,
     structuralStopPrice,

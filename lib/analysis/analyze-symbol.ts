@@ -20,6 +20,7 @@ import { scoreReversal } from "@/lib/scoring/reversal";
 import { assessRegime } from "@/lib/scoring/regime";
 import { scoreEntryTiming } from "@/lib/scoring/entry-timing";
 import { scoreExpectedEntry } from "@/lib/scoring/expected-entry";
+import { buildTradePlan } from "@/lib/scoring/trade-plan";
 import { decideSetup, nextEntryWindow } from "@/lib/scoring/setup";
 import { dataSourceDisplay } from "@/lib/data/provider-mode";
 import { loadFuturesPositioning } from "@/lib/analysis/futures-data";
@@ -97,6 +98,7 @@ function baseAnalysis(
     long: null,
     short: null,
     entryExpectancy: { long: null, short: null },
+    tradePlans: { long: null, short: null },
     difference: null,
     bias: null,
     indicators: {},
@@ -327,6 +329,31 @@ export async function analyzeSymbol(
   });
   const nextWindow = nextEntryWindow(timing, regime);
   const src = dataSourceDisplay();
+  const confidence = confidenceFromDataQuality(dataQuality);
+  const tradePlans = {
+    long: expectedLong
+      ? buildTradePlan({
+          assessment: expectedLong,
+          candles: candlesByTimeframe,
+          indicators,
+          futures,
+          dataQuality: dataQuality.score,
+          confidence,
+          hardStopPct: context.hardStopPct,
+        })
+      : null,
+    short: expectedShort
+      ? buildTradePlan({
+          assessment: expectedShort,
+          candles: candlesByTimeframe,
+          indicators,
+          futures,
+          dataQuality: dataQuality.score,
+          confidence,
+          hardStopPct: context.hardStopPct,
+        })
+      : null,
+  };
 
   return {
     symbol: compact,
@@ -345,6 +372,7 @@ export async function analyzeSymbol(
     long,
     short,
     entryExpectancy: { long: expectedLong, short: expectedShort },
+    tradePlans,
     difference: classified.difference,
     bias: classified.bias,
     signal: classified.signal,
@@ -361,7 +389,7 @@ export async function analyzeSymbol(
     regime,
     timing,
     setup,
-    confidence: confidenceFromDataQuality(dataQuality),
+    confidence,
     nextWindow,
     dataSourceLabel: src.label,
     contract: {

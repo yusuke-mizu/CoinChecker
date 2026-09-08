@@ -237,4 +237,5 @@ export type SharedMarketContext = {
   tickers?: Record<string, TickerSnapshot>;
   venues?: Record<string, CandleVenue>;
   candidates?: Record<string, BtccCandidate>;
+  hardStopPct?: number;
 };

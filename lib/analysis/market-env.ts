@@ -105,6 +105,7 @@ function btcAnalysis(
     long,
     short,
     entryExpectancy: { long: null, short: null },
+    tradePlans: { long: null, short: null },
     difference: classified.difference,
     bias: classified.bias,
     signal: classified.signal,

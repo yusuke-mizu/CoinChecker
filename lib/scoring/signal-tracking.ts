@@ -26,6 +26,7 @@ export const DEFAULT_SIGNAL_SETTINGS: SignalSettings = {
   durationHours: 24,
   portfolioProtectionCount: 2,
   setLeverage: 1,
+  hardStopPct: 10,
 };
 
 function clamp(value: number): number {

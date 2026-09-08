@@ -45,6 +45,7 @@ export function listedWithoutPublicPerp(
     long: null,
     short: null,
     entryExpectancy: { long: null, short: null },
+    tradePlans: { long: null, short: null },
     difference: null,
     bias: null,
     signal: "DATA INSUFFICIENT",

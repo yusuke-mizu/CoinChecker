@@ -31,6 +31,7 @@ export type SignalSettings = {
   durationHours: TrackingDurationHours;
   portfolioProtectionCount: number;
   setLeverage: number;
+  hardStopPct: number;
 };
 
 export type SignalScoreSnapshot = {
@@ -121,7 +122,7 @@ export type SignalStoreDocument = {
 };
 
 export type SignalSetCandidate = {
-  name: "PROFIT SET" | "BALANCED SET" | "DEFENSIVE SET";
+  name: "ATTACK SET" | "BALANCED SET" | "DEFENSIVE SET";
   members: TrackedSignal[];
   status: "ACTIVE" | "WATCH" | "HIGH RISK";
   takeProfitRisk: "LOW" | "MEDIUM" | "HIGH";
@@ -140,4 +141,13 @@ export type SignalSetCandidate = {
   stressLevel: "LOW" | "MEDIUM" | "HIGH";
   stressEstimatedPct: number | null;
   leverage: number;
+  riskBudgetScore: number;
+  effectiveDiversification: number;
+  compoundingQuality: number;
+  alerts: Array<
+    | "CAPITAL PRESERVATION"
+    | "PORTFOLIO RISK RISING"
+    | "PORTFOLIO TAKE PROFIT WATCH"
+    | "PORTFOLIO DEFENSE"
+  >;
 };
