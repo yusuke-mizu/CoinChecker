@@ -68,8 +68,8 @@ export async function fetchOkxOhlcv(
   const capped = Math.min(Math.max(limit, 1), 300);
   const url = `https://www.okx.com/api/v5/market/candles?instId=${encodeURIComponent(instId)}&bar=${bar}&limit=${capped}`;
   const json = await fetchJson<OkxResponse<OkxCandle[]>>(url, {
-    timeoutMs: 12_000,
-    retries: 2,
+    timeoutMs: 8_000,
+    retries: 1,
   });
 
   if (json.code !== "0") {
@@ -164,8 +164,8 @@ export function compactFromOkxSwapInstId(instId: string): string | null {
 export async function fetchOkxUsdtMPerpetuals(): Promise<Record<string, PerpetualContract>> {
   const url = "https://www.okx.com/api/v5/public/instruments?instType=SWAP";
   const json = await fetchJson<OkxResponse<OkxInstrument[]>>(url, {
-    timeoutMs: 20_000,
-    retries: 2,
+    timeoutMs: 10_000,
+    retries: 1,
   });
   if (json.code !== "0") {
     throw new HttpError(`OKX instruments failed: ${json.msg || json.code}`, undefined, "HTTP");
@@ -255,7 +255,7 @@ export async function fetchOkxOiHistory5m(symbol: string, limit = 100) {
   let lastError: Error | null = null;
   for (const url of urls) {
     try {
-      const json = await fetchJson<OkxResponse<unknown>>(url, { timeoutMs: 12_000, retries: 1 });
+      const json = await fetchJson<OkxResponse<unknown>>(url, { timeoutMs: 7_000, retries: 0 });
       if (json.code !== "0") {
         lastError = new HttpError(json.msg || json.code, undefined, "HTTP");
         continue;
@@ -282,12 +282,12 @@ export async function fetchOkxFunding(symbol: string): Promise<OkxFundingSnapsho
   const histUrl = `https://www.okx.com/api/v5/public/funding-rate-history?instId=${encodeURIComponent(instId)}&limit=100`;
   const [curRes, histRes] = await Promise.allSettled([
     fetchJson<OkxResponse<Array<{ fundingRate?: string; nextFundingTime?: string }>>>(currentUrl, {
-      timeoutMs: 10_000,
-      retries: 1,
+      timeoutMs: 7_000,
+      retries: 0,
     }),
     fetchJson<OkxResponse<Array<{ fundingRate?: string }>>>(histUrl, {
-      timeoutMs: 10_000,
-      retries: 1,
+      timeoutMs: 7_000,
+      retries: 0,
     }),
   ]);
   let rate: number | null = null;
@@ -315,8 +315,8 @@ export async function fetchOkxFunding(symbol: string): Promise<OkxFundingSnapsho
 export async function fetchOkxSwapTickers(): Promise<Record<string, TickerSnapshot>> {
   const url = "https://www.okx.com/api/v5/market/tickers?instType=SWAP";
   const json = await fetchJson<OkxResponse<OkxTickerRow[]>>(url, {
-    timeoutMs: 20_000,
-    retries: 2,
+    timeoutMs: 10_000,
+    retries: 1,
   });
   if (json.code !== "0") {
     throw new HttpError(`OKX tickers failed: ${json.msg || json.code}`, undefined, "HTTP");

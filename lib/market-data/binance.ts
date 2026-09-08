@@ -24,8 +24,8 @@ export async function fetchBinanceUsdtMPerpetuals(): Promise<Record<string, Perp
       quoteAsset?: string;
     }>;
   }>("https://fapi.binance.com/fapi/v1/exchangeInfo", {
-    timeoutMs: 20_000,
-    retries: 2,
+    timeoutMs: 10_000,
+    retries: 1,
   });
   const out: Record<string, PerpetualContract> = {};
   for (const row of json.symbols ?? []) {
@@ -57,8 +57,8 @@ export async function fetchBinanceOhlcv(
   const capped = Math.min(Math.max(limit, 1), 1500);
   const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${encodeURIComponent(compact)}&interval=${INTERVAL[timeframe]}&limit=${capped}`;
   const rows = await fetchJson<Array<Array<string | number>>>(url, {
-    timeoutMs: 12_000,
-    retries: 2,
+    timeoutMs: 8_000,
+    retries: 1,
   });
   if (!Array.isArray(rows)) {
     throw new HttpError(`Binance kline failed for ${compact}`, undefined, "HTTP");
@@ -98,7 +98,7 @@ export async function fetchBinanceTickers(): Promise<Record<string, TickerSnapsh
       lowPrice?: string;
       volume?: string;
     }>
-  >("https://fapi.binance.com/fapi/v1/ticker/24hr", { timeoutMs: 20_000, retries: 2 });
+  >("https://fapi.binance.com/fapi/v1/ticker/24hr", { timeoutMs: 10_000, retries: 1 });
   const out: Record<string, TickerSnapshot> = {};
   for (const row of rows) {
     const symbol = (row.symbol ?? "").toUpperCase();
@@ -120,7 +120,7 @@ export async function fetchBinanceOiHistory5m(symbol: string, limit = 100) {
   const url = `https://fapi.binance.com/futures/data/openInterestHist?symbol=${encodeURIComponent(compact)}&period=5m&limit=${capped}`;
   const rows = await fetchJson<Array<{ timestamp?: number; sumOpenInterest?: string; sumOpenInterestValue?: string }>>(
     url,
-    { timeoutMs: 12_000, retries: 1 },
+    { timeoutMs: 7_000, retries: 0 },
   );
   if (!Array.isArray(rows)) {
     throw new HttpError(`Binance OI failed for ${compact}`, undefined, "HTTP");
@@ -141,11 +141,11 @@ export async function fetchBinanceFunding(symbol: string) {
   const [prem, hist] = await Promise.allSettled([
     fetchJson<{ lastFundingRate?: string; nextFundingTime?: number }>(
       `https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${encodeURIComponent(compact)}`,
-      { timeoutMs: 10_000, retries: 1 },
+      { timeoutMs: 7_000, retries: 0 },
     ),
     fetchJson<Array<{ fundingRate?: string }>>(
       `https://fapi.binance.com/fapi/v1/fundingRate?symbol=${encodeURIComponent(compact)}&limit=100`,
-      { timeoutMs: 10_000, retries: 1 },
+      { timeoutMs: 7_000, retries: 0 },
     ),
   ]);
   let rate: number | null = null;

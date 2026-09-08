@@ -35,7 +35,7 @@ export async function runPhase13(): Promise<Phase13Result> {
         items: [] as UsdtSymbol[],
         error: error instanceof Error ? error.message : String(error),
       })),
-    loadMarketEnv(true),
+    loadMarketEnv(),
   ]);
 
   const warning =

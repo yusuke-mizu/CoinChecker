@@ -33,7 +33,8 @@ import {
   signalClass,
 } from "@/components/format";
 
-const BATCH_SIZE = 8;
+// Keep each Worker request below the upstream rate-limit and timeout budget.
+const BATCH_SIZE = 3;
 const REFRESH_OPTIONS = [
   { label: "OFF", value: 0 },
   { label: "5分", value: 5 },
@@ -166,32 +167,17 @@ export function Dashboard() {
     setSelected(null);
     setProgress({ done: 0, total: 1 });
     try {
-      const response = await fetch("/api/phase13", { method: "POST" });
-      const json = await readApiJson<{
-        error?: string;
-        market?: MarketEnvSnapshot;
-        focus?: SymbolAnalysis;
-        symbols?: {
-          count: number;
-          items: { display: string }[];
-          warning: string | null;
-          error: string | null;
-        };
-      }>(response, "POST /api/phase13");
-      if (!response.ok) throw new Error(json.error || "Phase 1-3 の取得に失敗しました");
-      if (json.market) setMarket(json.market);
-      if (json.focus) {
-        setRows([json.focus]);
-        setSelected(json.focus);
-      }
-      if (json.symbols) {
-        setBtccCount(json.symbols.count);
-        setBtccPreview(json.symbols.items.slice(0, 24).map((item) => item.display));
-        if (json.symbols.warning) setWarning(json.symbols.warning);
-        if (json.symbols.error && json.symbols.count === 0) {
-          setWarning(json.symbols.error);
-        }
-      }
+      // BTC-only must not wait for the paginated BTCC universe.
+      const response = await fetch("/api/market-env");
+      const json = await readApiJson<MarketEnvSnapshot & { error?: string }>(
+        response,
+        "GET /api/market-env",
+      );
+      if (!response.ok) throw new Error(json.error || "BTC分析の取得に失敗しました");
+      if (!json.btc) throw new Error("BTC分析データがありません");
+      setMarket(json);
+      setRows([json.btc]);
+      setSelected(json.btc);
       setProgress({ done: 1, total: 1 });
       setUpdatedAt(new Date().toISOString());
     } catch (err) {
@@ -231,6 +217,11 @@ export function Dashboard() {
       if (universe.warning) setWarning(universe.warning);
       if (universe.contracts) setContracts(universe.contracts);
       setBtccCount(universe.btccCount);
+      setBtccPreview(
+        universe.symbols.slice(0, 24).map((symbol) =>
+          symbol.endsWith("USDT") ? `${symbol.slice(0, -4)}/USDT` : symbol,
+        ),
+      );
       const skipped = universe.skippedNoVenue ?? universe.skippedNoOkx;
       if (skipped) {
         setWarning(universe.warning);

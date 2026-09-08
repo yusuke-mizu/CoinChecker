@@ -43,8 +43,8 @@ export async function fetchBybitUsdtMPerpetuals(): Promise<Record<string, Perpet
         }>;
       }>
     >(`https://api.bybit.com/v5/market/instruments-info?${qs.toString()}`, {
-      timeoutMs: 20_000,
-      retries: 2,
+      timeoutMs: 10_000,
+      retries: 1,
     });
     if (json.retCode !== 0) {
       throw new HttpError(`Bybit instruments failed: ${json.retMsg}`, undefined, "HTTP");
@@ -81,8 +81,8 @@ export async function fetchBybitOhlcv(
   const capped = Math.min(Math.max(limit, 1), 1000);
   const url = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${encodeURIComponent(compact)}&interval=${INTERVAL[timeframe]}&limit=${capped}`;
   const json = await fetchJson<BybitResponse<{ list?: string[][] }>>(url, {
-    timeoutMs: 12_000,
-    retries: 2,
+    timeoutMs: 8_000,
+    retries: 1,
   });
   if (json.retCode !== 0) {
     throw new HttpError(`Bybit kline failed for ${compact}: ${json.retMsg}`, undefined, "HTTP");
@@ -126,8 +126,8 @@ export async function fetchBybitTickers(): Promise<Record<string, TickerSnapshot
       }>;
     }>
   >("https://api.bybit.com/v5/market/tickers?category=linear", {
-    timeoutMs: 20_000,
-    retries: 2,
+    timeoutMs: 10_000,
+    retries: 1,
   });
   if (json.retCode !== 0) {
     throw new HttpError(`Bybit tickers failed: ${json.retMsg}`, undefined, "HTTP");
@@ -155,7 +155,7 @@ export async function fetchBybitOiHistory5m(symbol: string, limit = 100) {
   const url = `https://api.bybit.com/v5/market/open-interest?category=linear&symbol=${encodeURIComponent(compact)}&intervalTime=5min&limit=${capped}`;
   const json = await fetchJson<
     BybitResponse<{ list?: Array<{ timestamp?: string; openInterest?: string; openInterestValue?: string }> }>
-  >(url, { timeoutMs: 12_000, retries: 1 });
+  >(url, { timeoutMs: 7_000, retries: 0 });
   if (json.retCode !== 0) {
     throw new HttpError(`Bybit OI failed for ${compact}: ${json.retMsg}`, undefined, "HTTP");
   }
@@ -175,11 +175,11 @@ export async function fetchBybitFunding(symbol: string) {
   const [cur, hist] = await Promise.allSettled([
     fetchJson<BybitResponse<{ list?: Array<{ fundingRate?: string; nextFundingTime?: string }> }>>(
       `https://api.bybit.com/v5/market/tickers?category=linear&symbol=${encodeURIComponent(compact)}`,
-      { timeoutMs: 10_000, retries: 1 },
+      { timeoutMs: 7_000, retries: 0 },
     ),
     fetchJson<BybitResponse<{ list?: Array<{ fundingRate?: string }> }>>(
       `https://api.bybit.com/v5/market/funding/history?category=linear&symbol=${encodeURIComponent(compact)}&limit=100`,
-      { timeoutMs: 10_000, retries: 1 },
+      { timeoutMs: 7_000, retries: 0 },
     ),
   ]);
   let rate: number | null = null;
