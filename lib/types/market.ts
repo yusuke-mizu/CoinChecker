@@ -20,6 +20,49 @@ export type TickerSnapshot = {
   volume24h: number | null;
 };
 
+export type AvailabilityStage =
+  | "DISCOVERED"
+  | "MARKET_DATA_AVAILABLE"
+  | "SCORING_AVAILABLE";
+
+export type ListingVerification =
+  | "OFFICIAL_CONFIRMED"
+  | "THIRD_PARTY_CONFIRMED"
+  | "DISCOVERED";
+
+export type ContractClassification = "USDT-M PERPETUAL" | "UNKNOWN";
+
+export type ProviderId =
+  | "btcc"
+  | "coingecko"
+  | "okx"
+  | "bybit"
+  | "binance"
+  | "unknown";
+
+export type SourceAttribution = {
+  provider: ProviderId;
+  label: string;
+  observedAt: string;
+  url?: string;
+  note?: string;
+};
+
+export type FeedProvenance = {
+  listing: SourceAttribution[];
+  ticker: SourceAttribution | null;
+  ohlcv: SourceAttribution | null;
+  oi: SourceAttribution | null;
+  funding: SourceAttribution | null;
+};
+
+export type AggregateDataQuality = {
+  score: number;
+  band: "HIGH" | "MEDIUM" | "LOW" | "NONE";
+  validTimeframes: CoreTimeframe[];
+  reasons: string[];
+};
+
 export type UsdtSymbol = {
   symbol: string;
   base: string;
@@ -44,6 +87,21 @@ export type PerpetualContract = {
   settlement: "Perpetual";
   maxLeverage: number | null;
   instId: string;
+};
+
+export type BtccCandidate = {
+  symbol: string;
+  display: string;
+  listingVerification: ListingVerification;
+  contract: ContractClassification;
+  availability: AvailabilityStage;
+  marketVenue: import("./venue").CandleVenue | null;
+  ticker: TickerSnapshot | null;
+  complementContract: PerpetualContract | null;
+  sources: FeedProvenance;
+  dataQuality: AggregateDataQuality;
+  discoveredAt: string;
+  discoveryWarnings: string[];
 };
 
 export type DataIssueCode =

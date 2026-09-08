@@ -20,8 +20,63 @@ import {
   fetchOkxTicker,
   fetchOkxUsdtMPerpetuals,
 } from "@/lib/market-data/okx";
-import type { Candle, CoreTimeframe, PerpetualContract, TickerSnapshot } from "@/lib/types/market";
+import type {
+  Candle,
+  CoreTimeframe,
+  PerpetualContract,
+  SourceAttribution,
+  TickerSnapshot,
+} from "@/lib/types/market";
+import type {
+  FundingProvider,
+  MarketDataProvider,
+  OpenInterestProvider,
+} from "@/lib/market-data/provider";
 import type { CandleVenue } from "@/lib/types/venue";
+
+export const MARKET_DATA_PROVIDERS: Record<CandleVenue, MarketDataProvider> = {
+  okx: {
+    id: "okx-usdt-m-public",
+    venue: "okx",
+    fetchContracts: fetchOkxUsdtMPerpetuals,
+    fetchOhlcv: fetchOkxOhlcv,
+    fetchTickers: fetchOkxSwapTickers,
+  },
+  bybit: {
+    id: "bybit-usdt-m-public",
+    venue: "bybit",
+    fetchContracts: fetchBybitUsdtMPerpetuals,
+    fetchOhlcv: fetchBybitOhlcv,
+    fetchTickers: fetchBybitTickers,
+  },
+  binance: {
+    id: "binance-usdt-m-public",
+    venue: "binance",
+    fetchContracts: fetchBinanceUsdtMPerpetuals,
+    fetchOhlcv: fetchBinanceOhlcv,
+    fetchTickers: fetchBinanceTickers,
+  },
+};
+
+export const OPEN_INTEREST_PROVIDERS: Record<CandleVenue, OpenInterestProvider> = {
+  okx: { id: "okx-oi-public", venue: "okx", fetchHistory5m: fetchOkxOiHistory5m },
+  bybit: { id: "bybit-oi-public", venue: "bybit", fetchHistory5m: fetchBybitOiHistory5m },
+  binance: {
+    id: "binance-oi-public",
+    venue: "binance",
+    fetchHistory5m: fetchBinanceOiHistory5m,
+  },
+};
+
+export const FUNDING_PROVIDERS: Record<CandleVenue, FundingProvider> = {
+  okx: { id: "okx-funding-public", venue: "okx", fetchFunding: fetchOkxFunding },
+  bybit: { id: "bybit-funding-public", venue: "bybit", fetchFunding: fetchBybitFunding },
+  binance: {
+    id: "binance-funding-public",
+    venue: "binance",
+    fetchFunding: fetchBinanceFunding,
+  },
+};
 
 export async function fetchAllVenueContracts(): Promise<{
   okx: Record<string, PerpetualContract>;
@@ -67,12 +122,24 @@ export function mergeContracts(
 }
 
 export async function fetchMergedTickers(): Promise<Record<string, TickerSnapshot>> {
+  return (await fetchSourcedTickers()).tickers;
+}
+
+export async function fetchSourcedTickers(): Promise<{
+  tickers: Record<string, TickerSnapshot>;
+  sources: Record<string, SourceAttribution>;
+}> {
   const [okx, bybit, binance] = await Promise.all([
     fetchOkxSwapTickers().catch(() => ({}) as Record<string, TickerSnapshot>),
     fetchBybitTickers().catch(() => ({}) as Record<string, TickerSnapshot>),
     fetchBinanceTickers().catch(() => ({}) as Record<string, TickerSnapshot>),
   ]);
-  return { ...binance, ...bybit, ...okx };
+  const tickers = { ...binance, ...bybit, ...okx };
+  const sources: Record<string, SourceAttribution> = {};
+  for (const symbol of Object.keys(binance)) sources[symbol] = sourceForVenue("binance", "ticker");
+  for (const symbol of Object.keys(bybit)) sources[symbol] = sourceForVenue("bybit", "ticker");
+  for (const symbol of Object.keys(okx)) sources[symbol] = sourceForVenue("okx", "ticker");
+  return { tickers, sources };
 }
 
 export async function fetchVenueOhlcv(
@@ -81,9 +148,7 @@ export async function fetchVenueOhlcv(
   timeframe: CoreTimeframe | "5m",
   limit: number,
 ): Promise<Candle[]> {
-  if (venue === "bybit") return fetchBybitOhlcv(symbol, timeframe, limit);
-  if (venue === "binance") return fetchBinanceOhlcv(symbol, timeframe, limit);
-  return fetchOkxOhlcv(symbol, timeframe, limit);
+  return MARKET_DATA_PROVIDERS[venue].fetchOhlcv(symbol, timeframe, limit);
 }
 
 export async function fetchVenueTicker(venue: CandleVenue, symbol: string): Promise<TickerSnapshot> {
@@ -95,15 +160,11 @@ export async function fetchVenueTicker(venue: CandleVenue, symbol: string): Prom
 }
 
 export async function fetchVenueOiHistory(venue: CandleVenue, symbol: string, limit = 100) {
-  if (venue === "bybit") return fetchBybitOiHistory5m(symbol, limit);
-  if (venue === "binance") return fetchBinanceOiHistory5m(symbol, limit);
-  return fetchOkxOiHistory5m(symbol, limit);
+  return OPEN_INTEREST_PROVIDERS[venue].fetchHistory5m(symbol, limit);
 }
 
 export async function fetchVenueFunding(venue: CandleVenue, symbol: string) {
-  if (venue === "bybit") return fetchBybitFunding(symbol);
-  if (venue === "binance") return fetchBinanceFunding(symbol);
-  return fetchOkxFunding(symbol);
+  return FUNDING_PROVIDERS[venue].fetchFunding(symbol);
 }
 
 function toCompact(symbol: string): string {
@@ -115,3 +176,15 @@ export const VENUE_LABEL: Record<CandleVenue, string> = {
   bybit: "Bybit USDT-M",
   binance: "Binance USDT-M",
 };
+
+export function sourceForVenue(
+  venue: CandleVenue,
+  feed: "ticker" | "ohlcv" | "oi" | "funding",
+): SourceAttribution {
+  return {
+    provider: venue,
+    label: `${VENUE_LABEL[venue]} ${feed.toUpperCase()}`,
+    observedAt: new Date().toISOString(),
+    note: "BTCC公式データではなく、完全一致シンボルの補完データ",
+  };
+}

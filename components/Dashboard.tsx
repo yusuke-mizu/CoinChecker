@@ -5,9 +5,9 @@ import { HIGH_BTC_CORR } from "@/lib/correlation/pearson";
 import { computeMarketRisk } from "@/lib/scoring/market-risk";
 import { applyRanks, topLong, topReversal, topShort, topTiming } from "@/lib/scoring/ranking";
 import { DATA_SOURCE_NOTES, DISCLAIMER } from "@/lib/analysis/notes";
-import { listedWithoutPublicPerp, NO_PUBLIC_PERP, DECISION_EMPTY } from "@/lib/analysis/listed-only";
+import { failedCandidateAnalysis, listedWithoutPublicPerp } from "@/lib/analysis/listed-only";
 import { readApiJson } from "@/lib/client/api-json";
-import type { TickerSnapshot, PerpetualContract } from "@/lib/types/market";
+import type { BtccCandidate, TickerSnapshot, PerpetualContract } from "@/lib/types/market";
 import type { CandleVenue } from "@/lib/types/venue";
 import type {
   MarketEnvSnapshot,
@@ -16,6 +16,7 @@ import type {
 } from "@/lib/types/scoring";
 import { SymbolDetail } from "@/components/SymbolDetail";
 import { TradeDesk } from "@/components/TradeDesk";
+import { BtccUniverseTable } from "@/components/BtccUniverseTable";
 import {
   adviceFor,
   macdJa,
@@ -57,6 +58,7 @@ type SortKey =
   | "signal";
 
 type UniverseResponse = {
+  candidates: BtccCandidate[];
   symbols: string[];
   tickers: Record<string, TickerSnapshot>;
   contracts?: Record<string, PerpetualContract>;
@@ -109,19 +111,28 @@ export function Dashboard() {
   const [rows, setRows] = useState<SymbolAnalysis[]>([]);
   const [market, setMarket] = useState<MarketEnvSnapshot | null>(null);
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<"all" | "long" | "short" | "listed" | "error">("all");
+  const [filter, setFilter] = useState<"all" | "long" | "short">("all");
+  const [discoveryMode, setDiscoveryMode] = useState<"all" | "confirmed">("all");
   const [sortKey, setSortKey] = useState<SortKey>("long");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [selected, setSelected] = useState<SymbolAnalysis | null>(null);
   const [refreshMin, setRefreshMin] = useState(0);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [btccCount, setBtccCount] = useState<number | null>(null);
-  const [btccPreview, setBtccPreview] = useState<string[]>([]);
   const [contracts, setContracts] = useState<Record<string, PerpetualContract>>({});
+  const [candidates, setCandidates] = useState<BtccCandidate[]>([]);
   const abortRef = useRef(false);
   const runningRef = useRef(false);
 
   const ranked = useMemo(() => applyRanks(rows), [rows]);
+  const scoredRows = useMemo(
+    () => ranked.filter((row) => row.availability === "SCORING_AVAILABLE" && row.rankingEligible),
+    [ranked],
+  );
+  const analysisBySymbol = useMemo(
+    () => new Map(ranked.map((row) => [row.symbol, row])),
+    [ranked],
+  );
   const risk: MarketRisk | null = useMemo(() => {
     if (!market && ranked.length === 0) return null;
     return computeMarketRisk({
@@ -145,16 +156,14 @@ export function Dashboard() {
   const bearRev = useMemo(() => topReversal(ranked, "bearish", 5), [ranked]);
 
   const visible = useMemo(() => {
-    let next = ranked;
+    let next = scoredRows;
     const q = query.trim().toUpperCase();
     if (q) next = next.filter((r) => r.symbol.includes(q) || r.display.includes(q));
     if (filter === "long") next = next.filter((r) => (r.long?.total ?? 0) >= 60 && r.signal.includes("LONG"));
     if (filter === "short") next = next.filter((r) => (r.short?.total ?? 0) >= 60 && r.signal.includes("SHORT"));
-    if (filter === "listed") next = next.filter((r) => r.dataSource === NO_PUBLIC_PERP);
-    if (filter === "error") next = next.filter((r) => r.status !== "ok" && r.dataSource !== NO_PUBLIC_PERP);
     const dir = sortDir === "asc" ? 1 : -1;
     return [...next].sort((a, b) => dir * compareRows(a, b, sortKey));
-  }, [ranked, query, filter, sortKey, sortDir]);
+  }, [scoredRows, query, filter, sortKey, sortDir]);
 
   const runPhase13 = useCallback(async () => {
     if (runningRef.current) return;
@@ -214,25 +223,28 @@ export function Dashboard() {
       if (!universeRes.ok) throw new Error(universe.error || "銘柄一覧の取得に失敗しました");
       if (!envRes.ok) throw new Error(env.error || "市場環境の取得に失敗しました");
       setMarket(env);
+      setCandidates(universe.candidates ?? []);
       if (universe.warning) setWarning(universe.warning);
       if (universe.contracts) setContracts(universe.contracts);
       setBtccCount(universe.btccCount);
-      setBtccPreview(
-        universe.symbols.slice(0, 24).map((symbol) =>
-          symbol.endsWith("USDT") ? `${symbol.slice(0, -4)}/USDT` : symbol,
-        ),
-      );
       const skipped = universe.skippedNoVenue ?? universe.skippedNoOkx;
       if (skipped) {
         setWarning(universe.warning);
       }
       const symbols = universe.symbols;
       const venues = universe.venues ?? {};
+      const candidateBySymbol = new Map(
+        (universe.candidates ?? []).map((candidate) => [candidate.symbol, candidate]),
+      );
       const listedOnly = symbols.filter((s) => !venues[s]);
       const toScore = symbols.filter((s) => venues[s]);
       setProgress({ done: 0, total: symbols.length });
       const collected: SymbolAnalysis[] = listedOnly.map((symbol) =>
-        listedWithoutPublicPerp(symbol, universe.tickers[symbol] ?? null),
+        listedWithoutPublicPerp(
+          symbol,
+          universe.tickers[symbol] ?? null,
+          candidateBySymbol.get(symbol),
+        ),
       );
       setRows([...collected]);
       setProgress({ done: collected.length, total: symbols.length });
@@ -240,9 +252,12 @@ export function Dashboard() {
         if (abortRef.current) break;
         const batch = toScore.slice(i, i + BATCH_SIZE);
         const tickers: Record<string, TickerSnapshot> = {};
+        const batchCandidates: Record<string, BtccCandidate> = {};
         for (const symbol of batch) {
           const snap = universe.tickers[symbol];
           if (snap) tickers[symbol] = snap;
+          const candidate = candidateBySymbol.get(symbol);
+          if (candidate) batchCandidates[symbol] = candidate;
         }
         const response = await fetch("/api/analyze-batch", {
           method: "POST",
@@ -254,6 +269,7 @@ export function Dashboard() {
             dominancePct: env.dominancePct,
             tickers,
             venues: universe.venues,
+            candidates: batchCandidates,
           }),
         });
         const json = await readApiJson<{ results?: SymbolAnalysis[]; error?: string }>(
@@ -262,28 +278,13 @@ export function Dashboard() {
         );
         if (!response.ok) {
           for (const symbol of batch) {
-            collected.push({
+            collected.push(failedCandidateAnalysis({
               symbol,
-              display: symbol,
-              status: "DATA_ERROR",
               ticker: tickers[symbol] ?? null,
-              long: null,
-              short: null,
-              difference: null,
-              bias: null,
-              signal: "DATA ERROR",
-              indicators: {},
-              updatedAt: new Date().toISOString(),
-              notes: [json.error || "Batch failed"],
-              dataSource: "okx-swap-public",
-              btcCorrelation: null,
-              rankLong: null,
-              rankShort: null,
-              reversal: null,
-              futures: null,
-              ...DECISION_EMPTY,
-              contract: null,
-            });
+              candidate: candidateBySymbol.get(symbol),
+              venue: venues[symbol],
+              error: json.error || "Batch failed",
+            }));
           }
         } else {
           collected.push(
@@ -424,9 +425,9 @@ export function Dashboard() {
         </div>
       ) : null}
 
-      {!market && !loading && ranked.length === 0 ? (
+      {!market && !loading && ranked.length === 0 && candidates.length === 0 ? (
         <div className="rounded-lg border border-dashed border-zinc-800 bg-zinc-900/40 px-5 py-10 text-center text-sm text-zinc-400">
-          「分析開始」で USDT-M Perpetual 一覧を取得し、その瞬間のデータだけを採点します。DB保存はありません。
+          「分析開始」でBTCC候補を発見し、同名の補完市場データが十分な銘柄だけを採点します。DB保存はありません。
         </div>
       ) : null}
 
@@ -465,31 +466,18 @@ export function Dashboard() {
             <StatusCard
               label="UPDATED"
               value={updatedAt ? new Date(updatedAt).toLocaleTimeString() : "—"}
-              sub={`${ranked.length} scored · BTCC掲載 ${btccCount ?? "—"} · 先物足あり ${ranked.length} · memory only`}
+              sub={`${scoredRows.length} scoring available · BTCC候補 ${btccCount ?? "—"} · memory only`}
             />
           </section>
 
-          {btccPreview.length ? (
-            <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3">
-              <div className="text-[11px] tracking-[0.16em] text-zinc-500">
-                PHASE 1 · BTCC掲載 USDT（{btccCount ?? btccPreview.length}）
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {btccPreview.map((display) => (
-                  <span
-                    key={display}
-                    className="rounded border border-zinc-700 px-2 py-0.5 font-mono text-[11px] text-zinc-300"
-                  >
-                    {display}
-                  </span>
-                ))}
-                {btccCount != null && btccCount > btccPreview.length ? (
-                  <span className="px-2 py-0.5 text-[11px] text-zinc-500">
-                    +{btccCount - btccPreview.length} more
-                  </span>
-                ) : null}
-              </div>
-            </section>
+          {candidates.length ? (
+            <BtccUniverseTable
+              candidates={candidates}
+              analyses={analysisBySymbol}
+              mode={discoveryMode}
+              onMode={setDiscoveryMode}
+              onSelect={setSelected}
+            />
           ) : null}
 
           {risk && risk.score >= 41 ? (
@@ -512,7 +500,7 @@ export function Dashboard() {
           </section>
 
           <TradeDesk
-            ranked={ranked}
+            ranked={scoredRows}
             market={market}
             risk={risk}
             contracts={contracts}
@@ -526,7 +514,7 @@ export function Dashboard() {
               placeholder="銘柄検索"
               className="h-9 w-40 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm"
             />
-            {(["all", "long", "short", "listed", "error"] as const).map((key) => (
+            {(["all", "long", "short"] as const).map((key) => (
               <button
                 key={key}
                 type="button"
@@ -539,11 +527,7 @@ export function Dashboard() {
                   ? "全部"
                   : key === "long"
                     ? "買い候補"
-                    : key === "short"
-                      ? "売り候補"
-                      : key === "listed"
-                        ? "掲載のみ"
-                        : "データエラー"}
+                    : "売り候補"}
               </button>
             ))}
           </section>

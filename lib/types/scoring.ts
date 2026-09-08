@@ -1,4 +1,15 @@
-import type { CoreTimeframe, DataIssueCode, TickerSnapshot } from "./market";
+import type {
+  AggregateDataQuality,
+  AvailabilityStage,
+  BtccCandidate,
+  ContractClassification,
+  CoreTimeframe,
+  DataIssueCode,
+  DataQuality,
+  FeedProvenance,
+  ListingVerification,
+  TickerSnapshot,
+} from "./market";
 import type { CandleVenue } from "./venue";
 import type { RegimeSnapshot } from "@/lib/scoring/regime";
 import type { TimingAssessment } from "@/lib/scoring/entry-timing";
@@ -82,6 +93,15 @@ export type BiasLabel = "LONG優勢" | "SHORT優勢" | "方向感なし / 見送
 export type SymbolAnalysis = {
   symbol: string;
   display: string;
+  availability: AvailabilityStage;
+  listingVerification: ListingVerification;
+  contractClassification: ContractClassification;
+  marketVenue: CandleVenue | null;
+  sources: FeedProvenance;
+  dataQuality: AggregateDataQuality;
+  timeframeQuality: Partial<Record<CoreTimeframe, DataQuality>>;
+  rankingEligible: boolean;
+  rankingExclusionReason: string | null;
   status: "ok" | DataIssueCode;
   ticker: TickerSnapshot | null;
   long: DirectionScore | null;
@@ -211,4 +231,5 @@ export type SharedMarketContext = {
   dominancePct: number | null;
   tickers?: Record<string, TickerSnapshot>;
   venues?: Record<string, CandleVenue>;
+  candidates?: Record<string, BtccCandidate>;
 };

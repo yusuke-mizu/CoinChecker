@@ -1,20 +1,28 @@
-import { fetchBtccUsdtSymbols } from "@/lib/exchanges/btcc";
+import { discoverBtccUsdtSymbols } from "@/lib/exchanges/btcc";
 import {
   fetchAllVenueContracts,
-  fetchMergedTickers,
+  fetchSourcedTickers,
   mergeContracts,
   pickVenue,
 } from "@/lib/market-data/venue-router";
+import { assessAggregateDataQuality, emptyProvenance } from "@/lib/analysis/availability";
 import { toDisplaySymbol } from "@/lib/market-data/provider";
 import { getTtlCache, setTtlCache } from "@/lib/util/ttl-cache";
-import type { PerpetualContract, TickerSnapshot, UsdtSymbol } from "@/lib/types/market";
+import type {
+  BtccCandidate,
+  PerpetualContract,
+  SourceAttribution,
+  TickerSnapshot,
+  UsdtSymbol,
+} from "@/lib/types/market";
 import type { CandleVenue } from "@/lib/types/venue";
 
-const CACHE_KEY = "universe-btcc-all-listed-v1";
+const CACHE_KEY = "universe-btcc-candidates-v2";
 const CACHE_MS = 5 * 60_000;
 const PRIORITY = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"];
 
 export type UniverseResult = {
+  candidates: BtccCandidate[];
   symbols: string[];
   tickers: Record<string, TickerSnapshot>;
   contracts: Record<string, PerpetualContract>;
@@ -50,51 +58,51 @@ export async function loadUniverse(force = false): Promise<UniverseResult> {
     if (cached) return cached;
   }
 
-  const [btccResult, coverage, tickersAll] = await Promise.all([
-    fetchBtccUsdtSymbols()
-      .then((symbols) => ({ symbols, error: null as string | null }))
+  const [btccResult, coverage, tickerResult] = await Promise.all([
+    discoverBtccUsdtSymbols()
+      .then((discoveries) => ({ discoveries, error: null as string | null }))
       .catch((error) => ({
-        symbols: [] as UsdtSymbol[],
+        discoveries: [],
         error: error instanceof Error ? error.message : String(error),
       })),
     fetchAllVenueContracts(),
-    fetchMergedTickers(),
+    fetchSourcedTickers(),
   ]);
 
   const venues: Record<string, CandleVenue> = {};
   let selected: string[] = [];
   let skippedNoVenue = 0;
   let warning: string | null = null;
-  let source = "coingecko-btcc ∩ (okx|bybit|binance usdt-m)";
+  const source = "coingecko-btcc-third-party discovery; ohlcv: okx|bybit|binance complement";
 
-  if (btccResult.symbols.length > 0) {
-    source = "coingecko-btcc-all (ohlcv: okx|bybit|binance when available)";
-    for (const row of btccResult.symbols) {
-      selected.push(row.symbol);
-      const venue = pickVenue(row.symbol, coverage);
+  if (btccResult.discoveries.length > 0) {
+    for (const discovery of btccResult.discoveries) {
+      selected.push(discovery.symbol.symbol);
+      const venue = pickVenue(discovery.symbol.symbol, coverage);
       if (venue) {
-        venues[row.symbol] = venue;
+        venues[discovery.symbol.symbol] = venue;
       } else {
         skippedNoVenue += 1;
       }
     }
     warning =
       skippedNoVenue > 0
-        ? `BTCC掲載は全件表示します。うち ${skippedNoVenue} 件は公開USDT-M足が無く採点できません（価格のみ）。足がある銘柄は OKX → Bybit → Binance です。`
-        : "対象はCoinGecko上のBTCC USDT銘柄です。足は OKX → Bybit → Binance の公開USDT-Mです。";
+        ? `BTCC候補は全件表示します。うち ${skippedNoVenue} 件は同名の公開USDT-M足が無く採点できません。Discoveryは第三者情報、足は OKX → Bybit → Binance の補完データです。`
+        : "対象はCoinGeckoで発見したBTCC候補です。BTCC公式確認ではなく、足は OKX → Bybit → Binance の補完データです。";
   } else {
-    selected = Object.keys(coverage.okx);
-    for (const symbol of selected) venues[symbol] = "okx";
-    source = "okx-usdt-m-linear-swap-fallback";
     warning =
-      "BTCC銘柄一覧の取得に失敗したため、OKXのUSDT-M先物一覧で代替しています。BTCC掲載ではありません。";
+      "BTCC候補の第三者Discoveryに失敗しました。OKX銘柄をBTCC銘柄として代用しないため、一覧は空です。";
   }
 
   selected = sortUniverse(selected, venues);
   const contracts = mergeContracts(coverage, venues);
   const tickers: Record<string, TickerSnapshot> = {};
-  for (const row of btccResult.symbols) {
-    const snap = tickersAll[row.symbol];
+  const discoveryBySymbol = new Map(
+    btccResult.discoveries.map((item) => [item.symbol.symbol, item]),
+  );
+  for (const discovery of btccResult.discoveries) {
+    const row = discovery.symbol;
+    const snap = tickerResult.tickers[row.symbol];
     if (snap) {
       tickers[row.symbol] = snap;
     } else if (row.lastPrice != null) {
@@ -108,15 +116,59 @@ export async function loadUniverse(force = false): Promise<UniverseResult> {
     }
   }
   for (const symbol of selected) {
-    if (!tickers[symbol] && tickersAll[symbol]) tickers[symbol] = tickersAll[symbol];
+    if (!tickers[symbol] && tickerResult.tickers[symbol]) {
+      tickers[symbol] = tickerResult.tickers[symbol];
+    }
   }
 
+  const candidates: BtccCandidate[] = selected.map((symbol) => {
+    const discovery = discoveryBySymbol.get(symbol);
+    const venue = venues[symbol] ?? null;
+    const listing = discovery?.evidence ? [discovery.evidence] : [];
+    const tickerSource: SourceAttribution | null = tickerResult.sources[symbol]
+      ? tickerResult.sources[symbol]
+      : discovery?.symbol.lastPrice != null
+        ? {
+            provider: "coingecko",
+            label: "CoinGecko BTCC ticker (third-party)",
+            observedAt: discovery.evidence.observedAt,
+            url: discovery.evidence.url,
+            note: "BTCC perpetual market dataではありません",
+          }
+        : null;
+    const provenance = emptyProvenance(listing);
+    provenance.ticker = tickerSource;
+    return {
+      symbol,
+      display: toDisplaySymbol(symbol),
+      listingVerification: "THIRD_PARTY_CONFIRMED",
+      contract: "UNKNOWN",
+      availability: venue ? "MARKET_DATA_AVAILABLE" : "DISCOVERED",
+      marketVenue: venue,
+      ticker: tickers[symbol] ?? null,
+      complementContract: contracts[symbol] ?? null,
+      sources: provenance,
+      dataQuality: assessAggregateDataQuality({
+        validTimeframes: [],
+        hasTicker: Boolean(tickers[symbol]),
+        hasOi: false,
+        hasFunding: false,
+      }),
+      discoveredAt: discovery?.evidence.observedAt ?? new Date().toISOString(),
+      discoveryWarnings: [
+        ...(discovery?.warnings ?? []),
+        "第三者情報によるBTCC銘柄候補。BTCC公式・Perpetual確定ではありません。",
+      ],
+    };
+  });
+
   const result: UniverseResult = {
+    candidates,
     symbols: selected,
     tickers,
     contracts,
     venues,
-    btccCount: btccResult.symbols.length,
+    btccCount: btccResult.discoveries.length,
     skippedNoVenue,
     skippedNoOkx: skippedNoVenue,
     skippedSpotOrNonPerp: 0,

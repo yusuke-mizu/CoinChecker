@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { analyzeSymbol } from "@/lib/analysis/analyze-symbol";
 import { loadMarketEnv } from "@/lib/analysis/market-env";
-import { DECISION_EMPTY } from "@/lib/analysis/listed-only";
+import { failedCandidateAnalysis } from "@/lib/analysis/listed-only";
 import { apiError } from "@/lib/api/json-error";
 import { toCompactUsdt } from "@/lib/market-data/provider";
 import { mapPool } from "@/lib/util/pool";
 import type { SharedMarketContext, TimeframeIndicators } from "@/lib/types/scoring";
-import type { TickerSnapshot } from "@/lib/types/market";
+import type { BtccCandidate, TickerSnapshot } from "@/lib/types/market";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -22,6 +22,7 @@ export async function POST(request: Request) {
       dominancePct?: number | null;
       tickers?: Record<string, TickerSnapshot>;
       venues?: Record<string, import("@/lib/types/venue").CandleVenue>;
+      candidates?: Record<string, BtccCandidate>;
     };
     const symbols = [...new Set((body.symbols ?? []).map(toCompactUsdt))].slice(0, MAX_SYMBOLS);
     if (symbols.length === 0) {
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
       dominancePct: body.dominancePct ?? null,
       tickers: body.tickers,
       venues: body.venues,
+      candidates: body.candidates,
     };
     if (!context.btc4h || context.btc1hCloses.length === 0) {
       const env = await loadMarketEnv();
@@ -46,6 +48,7 @@ export async function POST(request: Request) {
         dominancePct: context.dominancePct ?? env.dominancePct,
         tickers: context.tickers,
         venues: context.venues,
+        candidates: context.candidates,
       };
     }
 
@@ -53,28 +56,13 @@ export async function POST(request: Request) {
       try {
         return await analyzeSymbol(symbol, context);
       } catch (error) {
-        return {
+        return failedCandidateAnalysis({
           symbol,
-          display: symbol,
-          status: "DATA_ERROR" as const,
           ticker: context.tickers?.[symbol] ?? null,
-          long: null,
-          short: null,
-          difference: null,
-          bias: null,
-          signal: "DATA ERROR" as const,
-          indicators: {},
-          updatedAt: new Date().toISOString(),
-          notes: [error instanceof Error ? error.message : String(error)],
-          dataSource: "okx-swap-public",
-          btcCorrelation: null,
-          rankLong: null,
-          rankShort: null,
-          reversal: null,
-          futures: null,
-          ...DECISION_EMPTY,
-          contract: null,
-        };
+          candidate: context.candidates?.[symbol],
+          venue: context.venues?.[symbol],
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     });
 

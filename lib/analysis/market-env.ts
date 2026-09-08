@@ -8,8 +8,14 @@ import { scoreReversal } from "@/lib/scoring/reversal";
 import { dataSourceDisplay } from "@/lib/data/provider-mode";
 import { assessRegime } from "@/lib/scoring/regime";
 import { scoreEntryTiming } from "@/lib/scoring/entry-timing";
-import { confidenceFrom, decideSetup, nextEntryWindow } from "@/lib/scoring/setup";
+import { decideSetup, nextEntryWindow } from "@/lib/scoring/setup";
 import { loadFuturesPositioning } from "@/lib/analysis/futures-data";
+import {
+  assessAggregateDataQuality,
+  confidenceFromDataQuality,
+  emptyProvenance,
+} from "@/lib/analysis/availability";
+import { sourceForVenue } from "@/lib/market-data/venue-router";
 import { getTtlCache, setTtlCache } from "@/lib/util/ttl-cache";
 import type { FuturesPositioning, MarketEnvSnapshot, SymbolAnalysis, TimeframeIndicators } from "@/lib/types/scoring";
 
@@ -24,12 +30,30 @@ function btcAnalysis(
   dominancePct: number | null,
   notes: string[],
   futures: FuturesPositioning | null,
+  timeframeQuality: SymbolAnalysis["timeframeQuality"],
 ): SymbolAnalysis {
+  const validTimeframes = [
+    ...(tf4h ? (["4h"] as const) : []),
+    ...(tf1h ? (["1h"] as const) : []),
+    ...(tf15m ? (["15m"] as const) : []),
+  ];
+  const canScore = validTimeframes.length >= 2;
+  const dataQuality = assessAggregateDataQuality({
+    validTimeframes,
+    hasTicker: Boolean(ticker),
+    hasOi: Boolean(futures?.availableOi),
+    hasFunding: Boolean(futures?.availableFunding),
+  });
+  const sources = emptyProvenance();
+  if (ticker) sources.ticker = sourceForVenue("okx", "ticker");
+  if (validTimeframes.length) sources.ohlcv = sourceForVenue("okx", "ohlcv");
+  if (futures?.availableOi) sources.oi = sourceForVenue("okx", "oi");
+  if (futures?.availableFunding) sources.funding = sourceForVenue("okx", "funding");
   const market = { btc4h: tf4h, dominancePct, isBtc: true };
   const long =
-    tf4h || tf1h || tf15m ? scoreDirection("long", { market, tf4h, tf1h, tf15m, futures }) : null;
+    canScore ? scoreDirection("long", { market, tf4h, tf1h, tf15m, futures }) : null;
   const short =
-    tf4h || tf1h || tf15m ? scoreDirection("short", { market, tf4h, tf1h, tf15m, futures }) : null;
+    canScore ? scoreDirection("short", { market, tf4h, tf1h, tf15m, futures }) : null;
   const reversal = scoreReversal({ tf4h, tf1h, tf15m, btc4h: tf4h, futures });
   const classified =
     long && short
@@ -67,6 +91,15 @@ function btcAnalysis(
   return {
     symbol: "BTCUSDT",
     display: "BTC/USDT",
+    availability: canScore ? "SCORING_AVAILABLE" : "MARKET_DATA_AVAILABLE",
+    listingVerification: "DISCOVERED",
+    contractClassification: "UNKNOWN",
+    marketVenue: "okx",
+    sources,
+    dataQuality,
+    timeframeQuality,
+    rankingEligible: canScore,
+    rankingExclusionReason: canScore ? null : "有効な時間足が2つ未満",
     status: long && short ? "ok" : "DATA_INSUFFICIENT",
     ticker,
     long,
@@ -90,11 +123,7 @@ function btcAnalysis(
     regime,
     timing,
     setup,
-    confidence: long && short ? confidenceFrom({
-      hasOi: Boolean(futures?.availableOi),
-      hasFunding: Boolean(futures?.availableFunding),
-      tfCount: [tf4h, tf1h, tf15m].filter(Boolean).length,
-    }) : "LOW",
+    confidence: confidenceFromDataQuality(dataQuality),
     nextWindow: timing && regime ? nextEntryWindow(timing, regime) : null,
     dataSourceLabel: src.label,
     contract: {
@@ -167,7 +196,20 @@ export async function loadMarketEnv(force = false): Promise<MarketEnvSnapshot> {
   if (!futures.availableFunding) notes.push("Funding unavailable");
 
   const snapshot: MarketEnvSnapshot = {
-    btc: btcAnalysis(tickerResult.ticker, tf4h, tf1h, tf15m, dominancePct, notes, futures),
+    btc: btcAnalysis(
+      tickerResult.ticker,
+      tf4h,
+      tf1h,
+      tf15m,
+      dominancePct,
+      notes,
+      futures,
+      {
+        ...(q4 ? { "4h": q4 } : {}),
+        ...(q1 ? { "1h": q1 } : {}),
+        ...(q15 ? { "15m": q15 } : {}),
+      },
+    ),
     btc4h: tf4h,
     btc1hCloses: c1.candles.map((c) => c.close),
     dominancePct,

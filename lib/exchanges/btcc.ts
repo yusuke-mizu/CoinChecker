@@ -1,7 +1,8 @@
 import { fetchJson, HttpError } from "@/lib/market-data/http";
 import { toDisplaySymbol } from "@/lib/market-data/provider";
 import { getTtlCache, setTtlCache } from "@/lib/util/ttl-cache";
-import type { UsdtSymbol } from "@/lib/types/market";
+import type { SourceAttribution, UsdtSymbol } from "@/lib/types/market";
+import type { SymbolProvider } from "@/lib/market-data/provider";
 
 type CoinGeckoTicker = {
   base?: string;
@@ -17,9 +18,15 @@ type CoinGeckoTickersResponse = {
   tickers?: CoinGeckoTicker[];
 };
 
-const CACHE_KEY = "btcc-usdt-symbols-v1";
+export type DiscoveredBtccSymbol = {
+  symbol: UsdtSymbol;
+  evidence: SourceAttribution;
+  warnings: string[];
+};
+
+const CACHE_KEY = "btcc-usdt-symbols-v2";
 const CACHE_MS = 5 * 60_000;
-let pending: Promise<UsdtSymbol[]> | null = null;
+let pending: Promise<DiscoveredBtccSymbol[]> | null = null;
 
 /**
  * BTCC USDT symbol universe.
@@ -39,8 +46,8 @@ let pending: Promise<UsdtSymbol[]> | null = null;
  * examples are BTC_USD spot-style symbols, not current BTCC USDT products.
  * Do not scrape TradingView. Do not call BTCC order/position endpoints.
  */
-async function loadBtccUsdtSymbols(): Promise<UsdtSymbol[]> {
-  const collected: UsdtSymbol[] = [];
+async function loadBtccUsdtSymbols(): Promise<DiscoveredBtccSymbol[]> {
+  const collected: DiscoveredBtccSymbol[] = [];
   const seen = new Set<string>();
 
   for (let page = 1; page <= 12; page += 1) {
@@ -64,14 +71,29 @@ async function loadBtccUsdtSymbols(): Promise<UsdtSymbol[]> {
       const symbol = `${base}USDT`;
       if (seen.has(symbol)) continue;
       seen.add(symbol);
+      const warnings: string[] = [];
+      if (ticker.is_stale) warnings.push("CoinGecko record is marked stale");
+      if (ticker.is_anomaly) warnings.push("CoinGecko record is marked anomalous");
       collected.push({
-        symbol,
-        base,
-        quote: "USDT",
-        display: toDisplaySymbol(symbol),
-        sourceId: "coingecko:btcc",
-        lastPrice: typeof ticker.last === "number" ? ticker.last : null,
-        volume: typeof ticker.volume === "number" ? ticker.volume : null,
+        symbol: {
+          symbol,
+          base,
+          quote: "USDT",
+          display: toDisplaySymbol(symbol),
+          sourceId: "coingecko:btcc",
+          lastPrice: typeof ticker.last === "number" ? ticker.last : null,
+          volume: typeof ticker.volume === "number" ? ticker.volume : null,
+        },
+        evidence: {
+          provider: "coingecko",
+          label: "CoinGecko BTCC ticker (third-party discovery)",
+          observedAt: new Date().toISOString(),
+          url: "https://api.coingecko.com/api/v3/exchanges/btcc/tickers",
+          note: ticker.trade_url
+            ? `Reported BTCC trade URL: ${ticker.trade_url}`
+            : "This does not prove a BTCC perpetual contract.",
+        },
+        warnings,
       });
     }
 
@@ -89,12 +111,12 @@ async function loadBtccUsdtSymbols(): Promise<UsdtSymbol[]> {
     );
   }
 
-  collected.sort((a, b) => a.symbol.localeCompare(b.symbol));
+  collected.sort((a, b) => a.symbol.symbol.localeCompare(b.symbol.symbol));
   return collected;
 }
 
-export async function fetchBtccUsdtSymbols(): Promise<UsdtSymbol[]> {
-  const cached = getTtlCache<UsdtSymbol[]>(CACHE_KEY);
+export async function discoverBtccUsdtSymbols(): Promise<DiscoveredBtccSymbol[]> {
+  const cached = getTtlCache<DiscoveredBtccSymbol[]>(CACHE_KEY);
   if (cached) return cached;
   if (pending) return pending;
 
@@ -105,3 +127,12 @@ export async function fetchBtccUsdtSymbols(): Promise<UsdtSymbol[]> {
     });
   return pending;
 }
+
+export async function fetchBtccUsdtSymbols(): Promise<UsdtSymbol[]> {
+  return (await discoverBtccUsdtSymbols()).map((item) => item.symbol);
+}
+
+export const coinGeckoBtccSymbolProvider: SymbolProvider = {
+  id: "coingecko-btcc-third-party",
+  discoverSymbols: fetchBtccUsdtSymbols,
+};

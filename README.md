@@ -1,12 +1,12 @@
 # Coin Checker
 
-BTCC掲載のUSDT銘柄を動的に取得し、4H / 1H / 15M のテクニカル指標から **LONG / SHORT を別々に採点**する、読み取り専用の判断支援ツールです。
+第三者公開情報からBTCCのUSDT銘柄候補を発見し、同一シンボルの補完市場データが十分な場合だけ、4H / 1H / 15M のテクニカル指標から **LONG / SHORT を別々に採点**する読み取り専用の判断支援ツールです。候補発見はBTCC公式確認を意味しません。
 
 自動売買・注文・決済・ポジション操作は実装していません。分析結果はメモリ上のみで、DBには保存しません。
 
 ## できること
 
-- BTCC USDT銘柄の動的取得（CoinGecko）。足は同じ名前の公開USDT-M先物（OKX → Bybit → Binance）
+- BTCC USDT候補の第三者Discovery（CoinGecko）。足は完全一致する公開USDT-M先物（OKX → Bybit → Binance）の補完データ
 - 全銘柄のバッチ分析（1銘柄失敗でも全体は止まらない）
 - TOP LONG / TOP SHORT
 - ソート可能な一覧（価格、24h、スコア、トレンド、RSI、MACD、ADX、出来高、BTC相関、判定）

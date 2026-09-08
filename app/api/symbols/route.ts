@@ -9,6 +9,7 @@ export async function GET() {
   try {
     const universe = await loadUniverse();
     return NextResponse.json({
+      candidates: universe.candidates,
       count: universe.symbols.length,
       symbols: universe.symbols.map(toUsdtSymbol),
       error: universe.error,

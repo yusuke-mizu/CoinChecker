@@ -49,12 +49,28 @@ export function SymbolDetail({
               Score represents signal strength, not probability of future price movement.
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
             <Mini label="買い ENTRY" value={row.long?.total} />
             <Mini label="売り ENTRY" value={row.short?.total} />
             <Mini label="TIMING" value={row.timing?.score} />
             <Mini label="信頼度" value={row.confidence} />
+            <Mini label="DATA QUALITY" value={row.dataQuality.score} />
           </div>
+          <section className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3 text-xs">
+            <div className="font-medium text-zinc-200">
+              {row.availability} · BTCC Listing {row.listingVerification} · Contract{" "}
+              {row.contractClassification}
+            </div>
+            <div className="mt-2 grid gap-1 text-zinc-400 sm:grid-cols-2">
+              <div>Listing: {row.sources.listing.map((source) => source.label).join(" / ") || "N/A"}</div>
+              <div>OHLCV: {row.sources.ohlcv?.label ?? "N/A"}</div>
+              <div>OI: {row.sources.oi?.label ?? "N/A"}</div>
+              <div>Funding: {row.sources.funding?.label ?? "N/A"}</div>
+            </div>
+            {row.dataQuality.reasons.length ? (
+              <p className="mt-2 text-amber-200">{row.dataQuality.reasons.join(" / ")}</p>
+            ) : null}
+          </section>
           <p className="text-xs text-zinc-400">
             {row.regime?.regime ?? "—"} · Trend {row.regime?.trendScore ?? "—"} · Range {row.regime?.rangeScore ?? "—"} ·
             Drift {row.regime?.driftScore ?? "—"} {row.regime?.driftSide ?? ""}
@@ -88,7 +104,8 @@ export function SymbolDetail({
           </div>
           {row.contract ? (
             <p className="text-xs text-zinc-500">
-              {row.contract.contractType} · margin {row.contract.marginAsset} · {row.contract.settlement}
+              補完先 {row.marketVenue?.toUpperCase()} contract: {row.contract.contractType} · margin{" "}
+              {row.contract.marginAsset} · {row.contract.settlement}
               {row.contract.maxLeverage != null ? ` · max ${row.contract.maxLeverage}x` : ""}
             </p>
           ) : null}
@@ -147,7 +164,14 @@ export function SymbolDetail({
             </section>
           ) : null}
 
-          <CandleChart symbol={row.symbol} timeframe={tf} onTimeframe={setTf} />
+          {row.marketVenue ? (
+            <CandleChart
+              symbol={row.symbol}
+              venue={row.marketVenue}
+              timeframe={tf}
+              onTimeframe={setTf}
+            />
+          ) : null}
 
           <table className="min-w-full text-left text-xs">
             <thead className="text-zinc-500">

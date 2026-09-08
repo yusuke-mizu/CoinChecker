@@ -1,14 +1,57 @@
-import type { Candle, CoreTimeframe, TickerSnapshot, UsdtSymbol } from "@/lib/types/market";
+import type {
+  Candle,
+  CoreTimeframe,
+  PerpetualContract,
+  SourceAttribution,
+  TickerSnapshot,
+  UsdtSymbol,
+} from "@/lib/types/market";
+import type { CandleVenue } from "@/lib/types/venue";
+
+export type SymbolProvider = {
+  id: string;
+  discoverSymbols(): Promise<UsdtSymbol[]>;
+};
+
+export type OiPoint = {
+  ts: number;
+  oi: number;
+  oiUsd: number | null;
+};
+
+export type FundingSnapshot = {
+  rate: number | null;
+  nextFundingTime: number | null;
+  history: number[];
+};
+
+export type SourcedResult<T> = {
+  data: T;
+  source: SourceAttribution;
+};
 
 export type MarketDataProvider = {
   id: string;
-  fetchUsdtSymbols(): Promise<UsdtSymbol[]>;
+  venue: CandleVenue;
+  fetchContracts(): Promise<Record<string, PerpetualContract>>;
   fetchOhlcv(
     symbol: string,
     timeframe: CoreTimeframe | "5m",
     limit: number,
   ): Promise<Candle[]>;
-  fetchTicker(symbol: string): Promise<TickerSnapshot>;
+  fetchTickers(): Promise<Record<string, TickerSnapshot>>;
+};
+
+export type OpenInterestProvider = {
+  id: string;
+  venue: CandleVenue;
+  fetchHistory5m(symbol: string, limit?: number): Promise<OiPoint[]>;
+};
+
+export type FundingProvider = {
+  id: string;
+  venue: CandleVenue;
+  fetchFunding(symbol: string): Promise<FundingSnapshot>;
 };
 
 export function toDisplaySymbol(symbol: string): string {

@@ -11,6 +11,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import type { CoreTimeframe } from "@/lib/types/market";
+import type { CandleVenue } from "@/lib/types/venue";
 import type { OhlcvPayload } from "@/components/format";
 import { readApiJson } from "@/lib/client/api-json";
 
@@ -18,10 +19,12 @@ const TFS: CoreTimeframe[] = ["4h", "1h", "15m"];
 
 export function CandleChart({
   symbol,
+  venue,
   timeframe,
   onTimeframe,
 }: {
   symbol: string;
+  venue: CandleVenue;
   timeframe: CoreTimeframe;
   onTimeframe: (tf: CoreTimeframe) => void;
 }) {
@@ -70,7 +73,7 @@ export function CandleChart({
     async function load() {
       try {
         const response = await fetch(
-          `/api/ohlcv?symbol=${encodeURIComponent(symbol)}&tf=${encodeURIComponent(timeframe)}`,
+          `/api/ohlcv?symbol=${encodeURIComponent(symbol)}&tf=${encodeURIComponent(timeframe)}&venue=${encodeURIComponent(venue)}`,
         );
         const json = await readApiJson<OhlcvPayload & { error?: string }>(
           response,
@@ -117,7 +120,7 @@ export function CandleChart({
       chart.remove();
       chartRef.current = null;
     };
-  }, [symbol, timeframe]);
+  }, [symbol, venue, timeframe]);
 
   return (
     <div>
@@ -139,7 +142,7 @@ export function CandleChart({
           ))}
         </div>
         <p className="text-[10px] text-zinc-500">
-          Charts by TradingView Lightweight Charts · data is our OKX OHLCV, not TradingView
+          Charts by TradingView Lightweight Charts · {venue.toUpperCase()} OHLCV · not TradingView
         </p>
       </div>
       <div ref={hostRef} className="h-80 w-full rounded-md border border-zinc-800" />
