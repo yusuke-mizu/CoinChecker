@@ -47,6 +47,14 @@ export function ExpectedValueSetsPanel({
                 {set.stressEstimatedPct == null ? "" : ` (~${set.stressEstimatedPct.toFixed(1)}%)`}
                 {" "}· QUALITY {set.dataQuality.toFixed(0)} · {set.leverage}x Risk
               </p>
+              <p className="mt-1 text-zinc-400">
+                EFFECTIVE DIVERSIFICATION {set.effectiveDiversification.toFixed(1)}/{set.members.length}
+                {" "}· RISK BUDGET {set.riskBudgetScore}/100
+                {" "}· COMPOUNDING {set.compoundingQuality}/100
+              </p>
+              {set.alerts.map((alert) => (
+                <p key={alert} className="mt-2 font-semibold text-amber-300">{alert}</p>
+              ))}
               {set.profitProtection ? (
                 <p className="mt-2 font-semibold text-amber-300">PORTFOLIO PROFIT PROTECTION / 利益保護を検討</p>
               ) : null}

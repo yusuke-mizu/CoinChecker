@@ -7,6 +7,7 @@ import { adviceFor, flagJa, futuresJa, macdJa, reversalJa, trendJa } from "@/lib
 import { CandleChart } from "@/components/CandleChart";
 import { formatNum, formatPct, formatPrice, signalClass } from "@/components/format";
 import type { ExpectedEntryAssessment } from "@/lib/scoring/expected-entry";
+import type { TradePlan } from "@/lib/types/trade-decision";
 
 export function SymbolDetail({
   row,
@@ -53,6 +54,10 @@ export function SymbolDetail({
           <div className="grid gap-3 sm:grid-cols-2">
             <ExpectancyPanel assessment={row.entryExpectancy.long} />
             <ExpectancyPanel assessment={row.entryExpectancy.short} />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TradePlanPanel plan={row.tradePlans.long} />
+            <TradePlanPanel plan={row.tradePlans.short} />
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
             <Mini label="買い ENTRY" value={row.entryExpectancy.long?.total} />
@@ -221,6 +226,41 @@ export function SymbolDetail({
         </div>
       </div>
     </div>
+  );
+}
+
+function TradePlanPanel({ plan }: { plan: TradePlan | null }) {
+  if (!plan) return null;
+  return (
+    <section className="rounded-lg border border-cyan-900 bg-cyan-950/10 p-3 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <b className={plan.direction === "LONG" ? "text-emerald-300" : "text-rose-300"}>
+          {plan.direction} TRADE PLAN
+        </b>
+        <span>{plan.riskTier} · {plan.confidence}</span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-1 font-mono text-zinc-300">
+        <span>ZONE {formatPrice(plan.entryZoneLow)} - {formatPrice(plan.entryZoneHigh)}</span>
+        <span>R/R {plan.rewardRisk.toFixed(2)}</span>
+        <span>STOP {formatPrice(plan.structureStop)}</span>
+        <span>HARD {formatPrice(plan.hardStop)} ({plan.hardStopPct}%)</span>
+        <span>TP1 {formatPrice(plan.target1)}</span>
+        <span>TP2 {formatPrice(plan.target2)}</span>
+        <span>OVERHEAT {plan.overheatScore}</span>
+        <span>OVERSOLD {plan.oversoldScore}</span>
+      </div>
+      <p className="mt-2 font-semibold text-cyan-200">{plan.entryLocation}</p>
+      <p className="mt-1 text-zinc-400">
+        Breakout {plan.breakoutStatus.replaceAll("_", " ")}
+        {plan.breakoutLevel == null ? "" : ` @ ${formatPrice(plan.breakoutLevel)}`}
+      </p>
+      <p className="mt-2 text-zinc-400"><b>WHY NOW?</b> {plan.thesis.whyNow}</p>
+      <p className="mt-1 text-zinc-400"><b>INVALIDATION</b> {plan.thesis.invalidation}</p>
+      <p className="mt-1 text-zinc-400"><b>MAIN RISK</b> {plan.thesis.mainRisk}</p>
+      {plan.structureBeyondHardStop ? (
+        <p className="mt-2 font-semibold text-rose-300">Structure StopがHard Stop上限外です。</p>
+      ) : null}
+    </section>
   );
 }
 

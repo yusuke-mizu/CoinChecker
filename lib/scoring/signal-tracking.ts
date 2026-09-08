@@ -98,6 +98,7 @@ export function toSignalObservation(
     reversalScore: side.reversal,
     trendScore: side.own.breakdown.trend4h + side.own.breakdown.trend1h,
   });
+  const plan = direction === "LONG" ? row.tradePlans.long : row.tradePlans.short;
   const snapshot: SignalScoreSnapshot = {
     scoreModel: "expectancy-v1",
     entry: side.expectancy.total,
@@ -127,6 +128,18 @@ export function toSignalObservation(
     signalLabel: row.signal,
     observedAt: row.updatedAt,
     reasons: exit.reasons.slice(0, 8),
+    overheat: side.expectancy.overheatScore,
+    oversold: side.expectancy.oversoldScore,
+    entryZoneLow: plan?.entryZoneLow,
+    entryZoneHigh: plan?.entryZoneHigh,
+    structureStop: plan?.structureStop,
+    hardStop: plan?.hardStop,
+    invalidationLevel: plan?.invalidationLevel,
+    breakoutLevel: plan?.breakoutLevel,
+    target1: plan?.target1,
+    target2: plan?.target2,
+    riskTier: plan?.riskTier,
+    compoundingQuality: plan?.compoundingQuality,
   };
   return {
     symbol: row.symbol,

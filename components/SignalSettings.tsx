@@ -146,6 +146,22 @@ export function SignalSettings({
             }))}
           />
         </label>
+        <label className="text-[11px] text-zinc-500">
+          Hard Stop上限
+          <input
+            className={`${inputClass} ml-2 w-16`}
+            type="number"
+            min={1}
+            max={25}
+            step={0.5}
+            value={draft.hardStopPct}
+            onChange={(event) => setDraft((value) => ({
+              ...value,
+              hardStopPct: Number(event.target.value),
+            }))}
+          />
+          %
+        </label>
         <button
           type="button"
           disabled={saving}

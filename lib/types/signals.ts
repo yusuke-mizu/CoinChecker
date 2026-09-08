@@ -63,6 +63,18 @@ export type SignalScoreSnapshot = {
   signalLabel: SignalLabel;
   observedAt: string;
   reasons: string[];
+  overheat?: number;
+  oversold?: number;
+  entryZoneLow?: number;
+  entryZoneHigh?: number;
+  structureStop?: number;
+  hardStop?: number;
+  invalidationLevel?: number;
+  breakoutLevel?: number | null;
+  target1?: number;
+  target2?: number;
+  riskTier?: string;
+  compoundingQuality?: number;
 };
 
 export type SignalObservation = {

@@ -27,6 +27,7 @@ import { SignalSettings } from "@/components/SignalSettings";
 import { TrackedSignalsPanel } from "@/components/TrackedSignalsPanel";
 import { SignalPerformancePanel } from "@/components/SignalPerformancePanel";
 import { ExpectedValueSetsPanel } from "@/components/ExpectedValueSetsPanel";
+import { DecisionEnginePanel } from "@/components/DecisionEnginePanel";
 import {
   adviceFor,
   macdJa,
@@ -231,7 +232,7 @@ export function Dashboard() {
         });
       }
     }
-  }, [trackedSignals]);
+  }, [trackedSignals, signalSettings.hardStopPct]);
 
   const saveSignalSettings = useCallback(async (settings: SignalSettingsType) => {
     const response = await fetch("/api/signals", {
@@ -364,6 +365,7 @@ export function Dashboard() {
             tickers,
             venues,
             candidates: batchCandidates,
+            hardStopPct: signalSettings.hardStopPct,
           }),
         });
         const json = await readApiJson<{ results?: SymbolAnalysis[]; error?: string }>(
@@ -435,7 +437,7 @@ export function Dashboard() {
       runningRef.current = false;
       setLoading(false);
     }
-  }, [trackedSignals]);
+  }, [trackedSignals, signalSettings.hardStopPct]);
 
   useEffect(() => {
     if (!refreshMin) return;
@@ -577,7 +579,7 @@ export function Dashboard() {
       ) : null}
 
       <SignalSettings
-        key={`${signalSettings.enabled}-${signalSettings.entryThreshold}-${signalSettings.strongEntryThreshold}-${signalSettings.watchEntryThreshold}-${signalSettings.timingThreshold}-${signalSettings.topN}-${signalSettings.durationHours}-${signalSettings.portfolioProtectionCount}-${signalSettings.setLeverage}`}
+        key={`${signalSettings.enabled}-${signalSettings.entryThreshold}-${signalSettings.strongEntryThreshold}-${signalSettings.watchEntryThreshold}-${signalSettings.timingThreshold}-${signalSettings.topN}-${signalSettings.durationHours}-${signalSettings.portfolioProtectionCount}-${signalSettings.setLeverage}-${signalSettings.hardStopPct}`}
         settings={signalSettings}
         onSave={saveSignalSettings}
       />
@@ -623,6 +625,13 @@ export function Dashboard() {
               sub={`${scoredRows.length} scoring available · BTCC候補 ${btccCount ?? "—"} · Signal metadata: KV`}
             />
           </section>
+
+          <DecisionEnginePanel
+            rows={scoredRows}
+            market={market}
+            signals={trackedSignals}
+            settings={signalSettings}
+          />
 
           {candidates.length ? (
             <BtccUniverseTable

@@ -54,6 +54,22 @@ function parseSnapshot(value: unknown): SignalScoreSnapshot | null {
   }
   if (typeof value.entryType !== "string" || value.entryType.length > 40) return null;
   if (typeof value.entryDecision !== "string" || value.entryDecision.length > 40) return null;
+  for (const metric of [value.overheat, value.oversold, value.compoundingQuality]) {
+    if (metric != null && !score(metric)) return null;
+  }
+  for (const price of [
+    value.entryZoneLow,
+    value.entryZoneHigh,
+    value.structureStop,
+    value.hardStop,
+    value.invalidationLevel,
+    value.breakoutLevel,
+    value.target1,
+    value.target2,
+  ]) {
+    if (price != null && (typeof price !== "number" || !Number.isFinite(price) || price <= 0)) return null;
+  }
+  if (value.riskTier != null && !["LOW RISK", "MEDIUM RISK", "HIGH RISK"].includes(String(value.riskTier))) return null;
   if (value.futures != null && !score(value.futures)) return null;
   if (typeof value.price !== "number" || !Number.isFinite(value.price) || value.price <= 0) return null;
   if (!["up", "down", "none"].includes(String(value.driftSide))) return null;
@@ -155,6 +171,15 @@ function parseSettings(value: unknown, current: SignalSettings): SignalSettings 
       value.setLeverage > 20
     ) return null;
     next.setLeverage = value.setLeverage;
+  }
+  if (value.hardStopPct !== undefined) {
+    if (
+      typeof value.hardStopPct !== "number" ||
+      !Number.isFinite(value.hardStopPct) ||
+      value.hardStopPct < 1 ||
+      value.hardStopPct > 25
+    ) return null;
+    next.hardStopPct = Math.round(value.hardStopPct * 10) / 10;
   }
   if (next.strongEntryThreshold <= next.watchEntryThreshold) return null;
   return next;

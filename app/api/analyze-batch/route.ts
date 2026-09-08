@@ -23,6 +23,7 @@ export async function POST(request: Request) {
       tickers?: Record<string, TickerSnapshot>;
       venues?: Record<string, import("@/lib/types/venue").CandleVenue>;
       candidates?: Record<string, BtccCandidate>;
+      hardStopPct?: number;
     };
     const symbols = [...new Set((body.symbols ?? []).map(toCompactUsdt))].slice(0, MAX_SYMBOLS);
     if (symbols.length === 0) {
@@ -39,6 +40,10 @@ export async function POST(request: Request) {
       tickers: body.tickers,
       venues: body.venues,
       candidates: body.candidates,
+      hardStopPct:
+        typeof body.hardStopPct === "number" && body.hardStopPct >= 1 && body.hardStopPct <= 25
+          ? body.hardStopPct
+          : 10,
     };
     if (!context.btc4h || context.btc1hCloses.length === 0) {
       const env = await loadMarketEnv();
@@ -49,6 +54,7 @@ export async function POST(request: Request) {
         tickers: context.tickers,
         venues: context.venues,
         candidates: context.candidates,
+        hardStopPct: context.hardStopPct,
       };
     }
 

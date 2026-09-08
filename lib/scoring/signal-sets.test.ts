@@ -59,7 +59,7 @@ describe("balanced signal set", () => {
     expect(result?.profitProtection).toBe(false);
   });
 
-  it("builds profit, balanced and defensive theoretical sets", () => {
+  it("builds attack, balanced and defensive theoretical sets", () => {
     const store = transitionSignalStore(
       null,
       [input("BTCUSDT", "LONG"), input("ETHUSDT", "SHORT")],
@@ -67,7 +67,7 @@ describe("balanced signal set", () => {
       "2026-09-08T00:00:00.000Z",
     );
     expect(buildExpectedValueSets(store.signals, 2).map((set) => set.name)).toEqual([
-      "PROFIT SET",
+      "ATTACK SET",
       "BALANCED SET",
       "DEFENSIVE SET",
     ]);

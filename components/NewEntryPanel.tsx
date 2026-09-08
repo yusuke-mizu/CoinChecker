@@ -19,7 +19,8 @@ export function NewEntryPanel({
       if (!direction || row.regime?.regime === "RANGING") return [];
       const assessment =
         direction === "LONG" ? row.entryExpectancy.long : row.entryExpectancy.short;
-      if (!assessment) return [];
+      const plan = direction === "LONG" ? row.tradePlans.long : row.tradePlans.short;
+      if (!assessment || !plan) return [];
       const entry = assessment?.total;
       const timing = assessment?.timingScore;
       if (
@@ -27,17 +28,24 @@ export function NewEntryPanel({
         timing == null ||
         entry < settings.watchEntryThreshold
       ) return [];
-      const configuredDecision = assessment.decision.startsWith("WAIT_")
-        ? assessment.decision.replaceAll("_", " ")
-        : entry >= settings.strongEntryThreshold &&
+      const configuredDecision = plan.structureBeyondHardStop
+        ? "NO ENTRY"
+        : plan.entryLocation.startsWith("CHASE")
+          ? "WAIT FOR PULLBACK"
+          : plan.breakoutStatus === "WAITING" && assessment.decision === "WAIT_FOR_BREAKOUT"
+            ? "WAIT FOR BREAKOUT"
+            : entry >= settings.strongEntryThreshold &&
             assessment.expectedMoveScore >= 65 &&
             timing >= settings.timingThreshold &&
-            assessment.reversalRisk <= 35
-          ? "STRONG ENTRY"
-          : entry >= settings.watchEntryThreshold
-            ? "ENTRY WATCH"
-            : "NO ENTRY";
-      return [{ row, direction, entry, timing, assessment, configuredDecision }];
+            assessment.reversalRisk <= 35 &&
+            plan.rewardRisk >= 2 &&
+            row.dataQuality.score >= 60 &&
+            plan.entryLocation === "ENTRY NOW / GOOD LOCATION"
+              ? "ENTRY NOW"
+              : entry >= settings.watchEntryThreshold
+                ? "ENTRY WATCH"
+                : "NO ENTRY";
+      return [{ row, direction, entry, timing, assessment, plan, configuredDecision }];
     })
     .sort((a, b) => b.entry - a.entry || b.timing - a.timing)
     .slice(0, settings.topN ?? undefined);
@@ -54,7 +62,7 @@ export function NewEntryPanel({
         </p>
       </div>
       <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        {entries.length ? entries.map(({ row, direction, entry, timing, assessment, configuredDecision }) => (
+        {entries.length ? entries.map(({ row, direction, entry, timing, assessment, plan, configuredDecision }) => (
           <button
             key={`${row.symbol}-${direction}`}
             type="button"
@@ -74,6 +82,9 @@ export function NewEntryPanel({
             <span className="mt-1 block text-[11px] text-zinc-500">
               R/R {assessment.rewardRisk.toFixed(2)} · Move {assessment.potentialRewardPct.toFixed(2)}%
               {" "}· {assessment.entryType} · {configuredDecision}
+            </span>
+            <span className="mt-1 block text-[10px] text-zinc-500">
+              {plan.entryLocation} · {plan.riskTier} · Compounding {plan.compoundingQuality}
             </span>
             {assessment.lateEntryWarning ? (
               <span className="mt-1 block text-[10px] text-amber-300">

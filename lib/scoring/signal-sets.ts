@@ -80,6 +80,43 @@ function aggregateSet(
         (correlationRisk === "HIGH" ? 15 : correlationRisk === "MEDIUM" ? 7 : 0),
     ),
   ));
+  const effectiveCorrelation =
+    averageAbsCorrelation * (sameSide / members.length);
+  const effectiveDiversification = Math.max(
+    1,
+    members.length / (1 + (members.length - 1) * effectiveCorrelation),
+  );
+  const concentrationMultiplier = members.length / effectiveDiversification;
+  const riskBudgetScore = Math.round(Math.min(
+    100,
+    expectedRiskPct * leverage * concentrationMultiplier * 10,
+  ));
+  const compoundingQuality = Math.round(Math.max(
+    0,
+    Math.min(
+      100,
+      setScore * 0.35 +
+        Math.min(rewardRisk / 3, 1) * 100 * 0.2 +
+        (100 - reversalRisk) * 0.15 +
+        (100 - riskBudgetScore) * 0.15 +
+        (effectiveDiversification / members.length) * 100 * 0.1 +
+        dataQuality * 0.05,
+    ),
+  ));
+  const alerts: SignalSetCandidate["alerts"] = [];
+  const stopCount = members.filter((item) =>
+    ["STOP_LOSS_WATCH", "INVALIDATED"].includes(item.status),
+  ).length;
+  const risingCount = members.filter((item) =>
+    ["WEAKENING", "EXIT_WATCH", "STOP_LOSS_WATCH"].includes(item.status),
+  ).length;
+  const takeProfitCount = members.filter((item) => item.status === "TAKE_PROFIT_WATCH").length;
+  if (correlationRisk === "HIGH" || rewardRisk < 1.5 || riskBudgetScore >= 70) {
+    alerts.push("CAPITAL PRESERVATION");
+  }
+  if (risingCount >= protectionCount) alerts.push("PORTFOLIO RISK RISING");
+  if (takeProfitCount >= protectionCount) alerts.push("PORTFOLIO TAKE PROFIT WATCH");
+  if (stopCount >= protectionCount) alerts.push("PORTFOLIO DEFENSE");
   return {
     name,
     members,
@@ -100,6 +137,10 @@ function aggregateSet(
     stressLevel,
     stressEstimatedPct,
     leverage,
+    riskBudgetScore,
+    effectiveDiversification,
+    compoundingQuality,
+    alerts,
   };
 }
 
@@ -136,7 +177,7 @@ export function buildExpectedValueSets(
   leverage = 1,
 ): SignalSetCandidate[] {
   const eligible = eligibleSignals(signals);
-  const profit = [...eligible]
+  const attack = [...eligible]
     .sort(
       (a, b) =>
         b.current.expectedMove - a.current.expectedMove ||
@@ -153,7 +194,7 @@ export function buildExpectedValueSets(
     )
     .slice(0, 4);
   return [
-    aggregateSet("PROFIT SET", profit, protectionCount, leverage),
+    aggregateSet("ATTACK SET", attack, protectionCount, leverage),
     buildBalancedSignalSet(signals, protectionCount, leverage),
     aggregateSet("DEFENSIVE SET", defensive, protectionCount, leverage),
   ].filter((item): item is SignalSetCandidate => item != null);
