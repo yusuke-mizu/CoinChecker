@@ -1,11 +1,20 @@
+import type { Metadata } from "next";
 import { Dashboard } from "@/components/Dashboard";
+import { ProductDisclaimer } from "@/components/product/ProductDisclaimer";
+import { ProductNav } from "@/components/product/ProductNav";
+import { PRODUCT_NAME } from "@/lib/copy/product";
 
-export const metadata = {
-  title: "詳細分析 | Coin Checker",
-  description:
-    "Full per-symbol analysis, signal tracking and decision engine. Kept for drill-down; the entry board is the main screen.",
+export const metadata: Metadata = {
+  title: `詳細分析 | ${PRODUCT_NAME}`,
+  description: "銘柄ごとの詳細な参考指標。投資助言・自動売買ではありません。",
 };
 
 export default function AnalysisPage() {
-  return <Dashboard />;
+  return (
+    <div className="min-h-full">
+      <ProductNav />
+      <Dashboard />
+      <ProductDisclaimer />
+    </div>
+  );
 }

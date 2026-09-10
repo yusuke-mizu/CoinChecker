@@ -1,7 +1,7 @@
 "use client";
 
 import { formatPct, formatPrice } from "@/components/format";
-import { VERDICT_ICON, starLabel, stars, verdictClass } from "./verdict";
+import { VERDICT_ICON, VERDICT_LABEL, starLabel, stars, verdictClass } from "./verdict";
 import type { OpportunityRow, OpportunitySide } from "@/lib/types/opportunity";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -54,11 +54,11 @@ export function OpportunityCard({
             side.verdict,
           )}`}
         >
-          {VERDICT_ICON[side.verdict]} {side.direction}
+          {VERDICT_ICON[side.verdict]} {side.direction} · {VERDICT_LABEL[side.verdict]}
         </span>
       </header>
 
-      <p className="mt-2 text-[11px] text-zinc-500">今エントリーした場合</p>
+      <p className="mt-2 text-[11px] text-zinc-500">今の価格から入った場合の目安（確定ではありません）</p>
 
       <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-2">
         <Field label="利益到達確率">
@@ -108,9 +108,7 @@ export function OpportunityCard({
           {stars(side.stars)}{" "}
           <span className="text-[10px] text-zinc-400">{starLabel(side.verdict, side.stars)}</span>
         </span>
-        <span className="text-[10px] text-zinc-500">
-          Confidence {side.confidence} / Chase {side.chaseRisk} / {side.basis}
-        </span>
+        <span className="text-[10px] text-zinc-500">信頼度 {side.confidence}</span>
       </footer>
 
       {side.warnings.length > 0 && (

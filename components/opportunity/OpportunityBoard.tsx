@@ -1,8 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readApiJson } from "@/lib/client/api-json";
+import { ProductDisclaimer } from "@/components/product/ProductDisclaimer";
+import { ProductNav } from "@/components/product/ProductNav";
 import { OpportunityCard } from "./OpportunityCard";
 import { OpportunityDetail } from "./OpportunityDetail";
 import type {
@@ -29,12 +30,12 @@ type BatchResponse = {
 type TabId = "long" | "short" | "ev" | "up" | "down" | "rr";
 
 const TABS: Array<{ id: TabId; label: string; hint: string }> = [
-  { id: "long", label: "🔥 今すぐLONG", hint: "LONGのEntry判定順・時間当たり期待値順" },
-  { id: "short", label: "🔥 今すぐSHORT", hint: "SHORTのEntry判定順・時間当たり期待値順" },
-  { id: "ev", label: "💰 Expected Value", hint: "手数料・Funding控除後の推定期待値順" },
-  { id: "up", label: "📈 上昇確率", hint: "LONG方向の利益到達確率順" },
-  { id: "down", label: "📉 下落確率", hint: "SHORT方向の利益到達確率順" },
-  { id: "rr", label: "⚖️ Risk / Reward", hint: "推奨TP ÷ 推奨SL（期待値プラスのみ）" },
+  { id: "long", label: "LONGの目安", hint: "LONG側の判定と時間当たり期待値の順" },
+  { id: "short", label: "SHORTの目安", hint: "SHORT側の判定と時間当たり期待値の順" },
+  { id: "ev", label: "期待値の順", hint: "手数料などを引いたあとの推定期待値の順" },
+  { id: "up", label: "上方向の到達見込み", hint: "LONG方向の利益到達見込みの順" },
+  { id: "down", label: "下方向の到達見込み", hint: "SHORT方向の利益到達見込みの順" },
+  { id: "rr", label: "損益比", hint: "推奨TP ÷ 推奨SL（期待値がプラスのもの）" },
 ];
 
 const COVERAGE_OPTIONS = [48, 96, 168, 240, 0] as const;
@@ -75,8 +76,6 @@ export function OpportunityBoard() {
   const [positiveOnly, setPositiveOnly] = useState(true);
   const [openSymbol, setOpenSymbol] = useState<string | null>(null);
   const [showExcluded, setShowExcluded] = useState(false);
-  const [modelVersion, setModelVersion] = useState<string | null>(null);
-  const [logged, setLogged] = useState<number | null>(null);
 
   const cancelRef = useRef(false);
 
@@ -104,8 +103,6 @@ export function OpportunityBoard() {
     setExcluded([]);
     setOpenSymbol(null);
 
-    setLogged(null);
-
     const target = coverage === 0 ? universe.total : Math.min(coverage, universe.total);
     setProgress({ done: 0, target });
     const collected: PredictionRecord[] = [];
@@ -128,7 +125,6 @@ export function OpportunityBoard() {
         setExcluded((current) => [...current, ...batch.excluded]);
         setRegime(batch.btcRegime);
         setUpdatedAt(batch.updatedAt);
-        setModelVersion(batch.modelVersion);
         collected.push(...(batch.predictions ?? []));
         setProgress({ done: Math.min(offset + limit, target), target });
       }
@@ -148,9 +144,8 @@ export function OpportunityBoard() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ records: collected.slice(0, 200) }),
         });
-        setLogged(Math.min(collected.length, 200));
       } catch {
-        setLogged(null);
+        // Logging is optional and never shown on the public board.
       }
     }
   }, [coverage, universe]);
@@ -204,39 +199,18 @@ export function OpportunityBoard() {
   ).length;
 
   return (
+    <div className="min-h-full">
+      <ProductNav />
     <main className="mx-auto max-w-7xl space-y-4 px-4 py-5">
       <header className="space-y-2">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <div>
-            <h1 className="text-base font-semibold tracking-[0.14em] text-zinc-100">
-              ENTRY NOW BOARD
-            </h1>
-            <p className="mt-1 text-[11px] leading-5 text-zinc-500">
-              いま各銘柄にエントリーした場合、短時間でどこまで伸びる可能性があるかを、LONG /
-              SHORT独立に推定します。表示している確率は過去データと現在の市場状態からの推定値で、
-              将来を保証するものではありません。
-            </p>
-          </div>
-          <nav className="flex gap-2 text-[11px]">
-            <Link
-              href="/analysis"
-              className="rounded border border-zinc-700 px-2 py-1 text-zinc-400 hover:bg-zinc-800"
-            >
-              詳細分析（旧画面）
-            </Link>
-            <Link
-              href="/model"
-              className="rounded border border-zinc-700 px-2 py-1 text-zinc-400 hover:bg-zinc-800"
-            >
-              Model / Calibration
-            </Link>
-            <Link
-              href="/simulation"
-              className="rounded border border-zinc-700 px-2 py-1 text-zinc-400 hover:bg-zinc-800"
-            >
-              Simulation
-            </Link>
-          </nav>
+        <div>
+          <h1 className="text-base font-semibold tracking-wide text-zinc-100">
+            エントリーボード
+          </h1>
+          <p className="mt-1 text-[11px] leading-5 text-zinc-500">
+            いまの価格からLONG / SHORTした場合の、短い時間での到達見込みと損切目安です。
+            数字は過去データからの推定であり、次の値動きを保証しません。発注は行いません。
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/60 p-3 text-[11px]">
@@ -250,7 +224,7 @@ export function OpportunityBoard() {
                 : "bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-40"
             }`}
           >
-            {scanning ? "中断" : "SCAN"}
+            {scanning ? "中断" : "読み込む"}
           </button>
 
           <label className="text-zinc-500">
@@ -285,7 +259,7 @@ export function OpportunityBoard() {
           </label>
 
           <label className="text-zinc-500">
-            Confidence下限 {minConfidence}
+            信頼度の下限 {minConfidence}
             <input
               type="range"
               min={0}
@@ -310,7 +284,7 @@ export function OpportunityBoard() {
             {scanning
               ? `評価中 ${progress.done} / ${progress.target}`
               : rows.length > 0
-                ? `評価済 ${rows.length} 銘柄 ・ ENTER NOW ${enterNow} 件`
+                ? `評価済 ${rows.length} 銘柄 ・ 条件が揃っている表示 ${enterNow} 件`
                 : universe
                   ? `対象 ${universe.total} 銘柄`
                   : "読み込み中"}
@@ -318,20 +292,6 @@ export function OpportunityBoard() {
         </div>
 
         {regime && <p className="text-[11px] text-zinc-500">{regime.label}</p>}
-        <p className="text-[11px] text-zinc-500">
-          {modelVersion ? (
-            <>
-              確率推定: 学習モデル{" "}
-              <span className="font-mono text-zinc-400">{modelVersion}</span>
-              {logged != null && ` ・ 予測 ${logged} 件を検証用に記録`}
-            </>
-          ) : rows.length > 0 ? (
-            <span className="text-amber-300/80">
-              学習モデル未公開のため履歴ベース推定で表示中。Model /
-              Calibration画面で学習を実行すると予測モデルに切り替わります。
-            </span>
-          ) : null}
-        </p>
         {error && (
           <p className="rounded border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-[11px] text-rose-200">
             {error}
@@ -368,8 +328,8 @@ export function OpportunityBoard() {
       {visible.length === 0 ? (
         <p className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4 text-center text-[12px] text-zinc-500">
           {rows.length === 0
-            ? "SCANを実行してください。"
-            : "この条件を満たす候補はありません。無理に選ばないことも正常な結果です。"}
+            ? "「読み込む」を押すと、いまの相場から目安を集めます。"
+            : "この条件を満たす候補はありません。無理に選ばないことも、正しい使い方です。"}
         </p>
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -407,15 +367,17 @@ export function OpportunityBoard() {
 
       <footer className="space-y-1 text-[10px] leading-5 text-zinc-500">
         <p>
-          利益到達確率が高いことだけでEntry推奨にはしていません。Expected Value・推奨SL・
-          ボラティリティ・推奨レバレッジ・BTC Market Regimeを合わせて判定しています。
+          到達見込みが高いことだけで「入る」判定にはしていません。推定期待値・損切までの距離・
+          値動きの大きさ・レバレッジ上限・市場全体の状態を合わせて見ています。
         </p>
         <p>
-          期待値は往復のTaker手数料・想定Slippage・保有時間分のFundingを控除した推定値です。
-          実際の約定価格・手数料・資金調達率は取引所と時点により異なります。
+          期待値は往復手数料・想定スリッページ・保有時間分の資金調達率を引いた目安です。
+          実際の約定とは異なります。
         </p>
         {updatedAt && <p>最終更新 {new Date(updatedAt).toLocaleString("ja-JP")}</p>}
+        <ProductDisclaimer compact />
       </footer>
     </main>
+    </div>
   );
 }

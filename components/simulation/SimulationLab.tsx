@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import Link from "next/link";
 import { MonteCarloPanel } from "./MonteCarloPanel";
 import { SimulationResults } from "./SimulationResults";
 import { SimulationSettingsForm } from "./SimulationSettingsForm";
@@ -45,28 +44,12 @@ export function SimulationLab() {
 
   return (
     <main className="mx-auto max-w-7xl space-y-4 p-4 sm:p-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold">Trading Research &amp; Simulation</h1>
-          <p className="mt-1 text-xs text-zinc-500">
-            仮説を過去データで検証するための研究環境です。自動売買・自動注文は行いません。
-            バックテスト結果は将来の成績を保証しません。
-          </p>
-        </div>
-        <nav className="flex gap-2">
-          <Link
-            href="/"
-            className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:border-zinc-500"
-          >
-            Entry Board
-          </Link>
-          <Link
-            href="/model"
-            className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:border-zinc-500"
-          >
-            Model / Calibration
-          </Link>
-        </nav>
+      <header>
+        <h1 className="text-lg font-semibold">シミュレーション</h1>
+        <p className="mt-1 text-xs text-zinc-500">
+          仮説を過去データで確認するための参考環境です。自動売買は行いません。
+          過去の結果は、これから先の成績を約束しません。
+        </p>
       </header>
 
       <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">

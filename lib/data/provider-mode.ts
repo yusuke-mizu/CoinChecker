@@ -21,14 +21,14 @@ export function dataSourceDisplay(mode: ProviderMode = getProviderMode()): {
   }
   if (mode === "mock") {
     return {
-      label: "DATA SOURCE: MOCK / TEST MODE",
+      label: "参考データ（デモ）",
       testMode: true,
-      detail: "開発用のダミーデータです。BTCCの相場ではありません。",
+      detail: "確認用のダミーデータです。実際の相場ではありません。",
     };
   }
   return {
-    label: "DATA SOURCE: OKX / TEST MODE",
-    testMode: true,
-    detail: "公開OKX USDT-M足で採点しています。BTCCの公式データとして表示していません。",
+    label: "公開先物データ（参考）",
+    testMode: false,
+    detail: "公開されているUSDT建て先物の足を使っています。特定取引所の公式推奨ではありません。",
   };
 }

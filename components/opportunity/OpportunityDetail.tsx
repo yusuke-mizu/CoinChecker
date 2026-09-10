@@ -1,7 +1,8 @@
 "use client";
 
 import { formatPct, formatPrice } from "@/components/format";
-import { VERDICT_ICON, starLabel, stars, verdictClass } from "./verdict";
+import { isPublicNote } from "@/lib/copy/product";
+import { VERDICT_ICON, VERDICT_LABEL, starLabel, stars, verdictClass } from "./verdict";
 import type { OpportunityRow, OpportunitySide } from "@/lib/types/opportunity";
 
 function compactUsd(value: number | null): string {
@@ -137,7 +138,7 @@ function SidePanel({ side }: { side: OpportunitySide }) {
             side.verdict,
           )}`}
         >
-          {VERDICT_ICON[side.verdict]} {side.direction} · {side.verdict}
+          {VERDICT_ICON[side.verdict]} {side.direction} · {VERDICT_LABEL[side.verdict]}
         </span>
         <span className="text-[12px] text-amber-300">
           {stars(side.stars)}{" "}
@@ -149,7 +150,7 @@ function SidePanel({ side }: { side: OpportunitySide }) {
         {[
           ["Expected Value", formatPct(side.expectedValuePct)],
           ["時間当たり", `${formatPct(side.expectedValuePerHourPct)}/h`],
-          ["推奨レバレッジ時ROI", formatPct(side.marginRoiPct)],
+          ["参考・推奨レバ時の損益率", formatPct(side.marginRoiPct)],
           ["Risk / Reward", `1 : ${side.rewardRisk.toFixed(2)}`],
           [
             "推奨SL",
@@ -176,14 +177,14 @@ function SidePanel({ side }: { side: OpportunitySide }) {
         <p className="mt-0.5 font-mono text-[12px] text-zinc-100">
           {side.leverage.recommendedMin}〜{side.leverage.recommendedMax}x
           <span className="ml-2 text-[11px] text-zinc-400">
-            Conservative {side.leverage.conservativeMin}〜{side.leverage.conservativeMax}x ／
-            Aggressive {side.leverage.aggressiveMin}〜{side.leverage.aggressiveMax}x
+            控えめ {side.leverage.conservativeMin}〜{side.leverage.conservativeMax}x
           </span>
         </p>
         <p className="mt-0.5 text-[10px] text-zinc-500">
+          期待値が高いからレバレッジを上げる数字ではありません。損失額から逆算した上限の目安です。
           {side.leverage.caps.length > 0
-            ? side.leverage.caps.join(" / ")
-            : `SL距離とボラティリティから上限${side.leverage.maxSafe}x`}
+            ? ` ${side.leverage.caps.join(" / ")}`
+            : ` 上限の目安 ${side.leverage.maxSafe}x`}
         </p>
       </div>
 
@@ -240,7 +241,7 @@ export function OpportunityDetail({
       </header>
 
       <p className="text-[10px] text-zinc-500">
-        内部計算に使用: ATR {row.atrPct.toFixed(2)}% / RSI{" "}
+        参考指標: ATR {row.atrPct.toFixed(2)}% / RSI{" "}
         {row.rsi == null ? "—" : row.rsi.toFixed(0)} / Volume比{" "}
         {row.volumeRatio == null ? "—" : row.volumeRatio.toFixed(2)} / Trend {row.trend} / Funding{" "}
         {row.fundingRatePct == null ? "—" : `${row.fundingRatePct.toFixed(4)}%`} / OI{" "}
@@ -255,8 +256,8 @@ export function OpportunityDetail({
         {row.short && <SidePanel side={row.short} />}
       </div>
 
-      {row.notes.length > 0 && (
-        <p className="text-[10px] text-zinc-500">{row.notes.join(" / ")}</p>
+      {row.notes.filter(isPublicNote).length > 0 && (
+        <p className="text-[10px] text-zinc-500">{row.notes.filter(isPublicNote).join(" / ")}</p>
       )}
     </div>
   );

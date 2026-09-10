@@ -1,5 +1,5 @@
-import { OpportunityBoard } from "@/components/opportunity/OpportunityBoard";
+import { LandingPage } from "@/components/product/LandingPage";
 
 export default function Home() {
-  return <OpportunityBoard />;
+  return <LandingPage />;
 }

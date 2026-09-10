@@ -1,17 +1,18 @@
+import { PUBLIC_VERDICT } from "@/lib/copy/product";
 import type { OpportunityVerdict } from "@/lib/types/opportunity";
 
 export const VERDICT_ICON: Record<OpportunityVerdict, string> = {
-  "ENTER NOW": "🟢",
-  "GOOD BUT WAIT": "🟡",
-  "WAIT FOR PULLBACK": "🟠",
-  "NO ENTRY": "🔴",
+  "ENTER NOW": "●",
+  "GOOD BUT WAIT": "●",
+  "WAIT FOR PULLBACK": "●",
+  "NO ENTRY": "●",
 };
 
 export const VERDICT_LABEL: Record<OpportunityVerdict, string> = {
-  "ENTER NOW": "ENTER NOW",
-  "GOOD BUT WAIT": "GOOD BUT WAIT",
-  "WAIT FOR PULLBACK": "WAIT FOR PULLBACK",
-  "NO ENTRY": "NO ENTRY",
+  "ENTER NOW": PUBLIC_VERDICT["ENTER NOW"],
+  "GOOD BUT WAIT": PUBLIC_VERDICT["GOOD BUT WAIT"],
+  "WAIT FOR PULLBACK": PUBLIC_VERDICT["WAIT FOR PULLBACK"],
+  "NO ENTRY": PUBLIC_VERDICT["NO ENTRY"],
 };
 
 export function verdictClass(verdict: OpportunityVerdict): string {
@@ -35,8 +36,8 @@ export function stars(count: number): string {
 
 export function starLabel(verdict: OpportunityVerdict, count: number): string {
   if (verdict === "NO ENTRY") return "見送り";
-  if (count >= 5) return "ENTRY候補";
-  if (count >= 4) return "有力候補";
-  if (count >= 3) return "条件付き候補";
+  if (count >= 5) return "条件は揃っている";
+  if (count >= 4) return "候補";
+  if (count >= 3) return "条件付き";
   return "様子見";
 }

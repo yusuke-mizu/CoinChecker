@@ -16,7 +16,6 @@ import type { CandleVenue } from "@/lib/types/venue";
 import type { SignalSettings as SignalSettingsType, TrackedSignal } from "@/lib/types/signals";
 import type { ScreenResult } from "@/lib/types/screening";
 import { ReachRankingPanel } from "@/components/ReachRankingPanel";
-import Link from "next/link";
 import type {
   MarketEnvSnapshot,
   MarketRisk,
@@ -549,7 +548,7 @@ export function Dashboard() {
       <header className="flex flex-col gap-3 border-b border-zinc-800 pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-xs font-medium tracking-[0.18em] text-zinc-500">
-            {market?.dataSourceLabel ?? "DATA SOURCE: OKX / TEST MODE"}
+            {market?.dataSourceLabel ?? "公開先物データ（参考）"}
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-50">Coin Checker</h1>
           <p className="mt-1 max-w-3xl text-sm text-zinc-400">
@@ -557,24 +556,6 @@ export function Dashboard() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/"
-            className="flex h-10 items-center rounded-md border border-zinc-700 px-4 text-sm text-zinc-300 hover:border-zinc-500"
-          >
-            Entry Board
-          </Link>
-          <Link
-            href="/model"
-            className="flex h-10 items-center rounded-md border border-zinc-700 px-4 text-sm text-zinc-300 hover:border-zinc-500"
-          >
-            Model / Calibration
-          </Link>
-          <Link
-            href="/simulation"
-            className="flex h-10 items-center rounded-md border border-zinc-700 px-4 text-sm text-zinc-300 hover:border-zinc-500"
-          >
-            Simulation
-          </Link>
           <label className="text-xs text-zinc-500">
             自動更新
             <select
@@ -716,7 +697,7 @@ export function Dashboard() {
               <span className="text-[11px] tracking-[0.16em] text-zinc-500">SCREENING PIPELINE</span>
               <p className="mt-1">
                 監視 {screen.discovered} 件 → 市場データあり {screen.marketDataAvailable} 件 →
-                {" "}軽量スクリーニング {screen.prescreened} 件（うち短期足検証 {screen.candleProbed} 件 /
+                {" "}絞り込み {screen.prescreened} 件（うち短期足 {screen.candleProbed} 件 /
                 {" "}追加API {screen.candleRequests} 回）→ 詳細分析 {screen.detailCandidates.length} 件
               </p>
               <p className="mt-1 text-zinc-500">
