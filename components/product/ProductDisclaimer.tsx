@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PRODUCT_NAME, PRODUCT_PRICE_LABEL, PRODUCT_PRICE_NOTE } from "@/lib/copy/product";
+import { PRODUCT_NAME } from "@/lib/copy/product";
 
 export function ProductDisclaimer({ compact = false }: { compact?: boolean }) {
   if (compact) {
@@ -11,7 +11,7 @@ export function ProductDisclaimer({ compact = false }: { compact?: boolean }) {
         <Link href="/notice" className="mx-1 underline decoration-zinc-600 underline-offset-2">
           注意事項
         </Link>
-        を必ずお読みください。販売価格 {PRODUCT_PRICE_LABEL}（{PRODUCT_PRICE_NOTE}）。
+        を必ずお読みください。
       </p>
     );
   }
@@ -25,15 +25,10 @@ export function ProductDisclaimer({ compact = false }: { compact?: boolean }) {
         </p>
         <p>
           暗号資産の先物・レバレッジ取引は、短時間で大きく値動きし、預けた証拠金を超える損失が出ることがあります。
-          本商品の代金 {PRODUCT_PRICE_LABEL} はツールの対価であり、運用で回収できることを意味しません。
         </p>
         <p>
           <Link href="/notice" className="underline decoration-zinc-600 underline-offset-2">
             注意事項・免責
-          </Link>
-          {" ・ "}
-          <Link href="/" className="underline decoration-zinc-600 underline-offset-2">
-            商品案内
           </Link>
         </p>
       </div>

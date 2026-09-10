@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PRODUCT_NAME, PRODUCT_PRICE_LABEL, PUBLIC_NAV } from "@/lib/copy/product";
+import { PRODUCT_NAME, PUBLIC_NAV } from "@/lib/copy/product";
 
 export function ProductNav() {
   const pathname = usePathname();
@@ -11,13 +11,12 @@ export function ProductNav() {
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
         <Link href="/" className="text-sm font-semibold tracking-wide text-zinc-100">
           {PRODUCT_NAME}
-          <span className="ml-2 text-[11px] font-normal text-zinc-500">{PRODUCT_PRICE_LABEL}</span>
         </Link>
         <nav className="flex flex-wrap gap-1.5 text-[11px]">
           {PUBLIC_NAV.map((item) => {
             const active =
               item.href === "/"
-                ? pathname === "/"
+                ? pathname === "/" || pathname.startsWith("/board")
                 : pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link

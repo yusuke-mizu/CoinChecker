@@ -21,7 +21,7 @@ const notoSansJp = Noto_Sans_JP({
 export const metadata: Metadata = {
   title: "Coin Checker",
   description:
-    "今の価格から入った場合の短期の到達見込みを整理する、読み取り専用の判断支援。投資助言・自動売買ではありません。販売価格 2,980円。",
+    "今の価格から入った場合の短期の到達見込みを整理する、読み取り専用の判断支援。投資助言・自動売買ではありません。",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

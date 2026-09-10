@@ -2,15 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ProductDisclaimer } from "@/components/product/ProductDisclaimer";
 import { ProductNav } from "@/components/product/ProductNav";
-import {
-  PRODUCT_NAME,
-  PRODUCT_PRICE_LABEL,
-  PRODUCT_PRICE_NOTE,
-} from "@/lib/copy/product";
+import { PRODUCT_NAME } from "@/lib/copy/product";
 
 export const metadata: Metadata = {
   title: `注意事項 | ${PRODUCT_NAME}`,
-  description: "投資助言ではないこと、損失の可能性、販売価格の範囲を明示した注意事項です。",
+  description: "投資助言ではないこと、損失の可能性を明示した注意事項です。",
 };
 
 export default function NoticePage() {
@@ -21,7 +17,7 @@ export default function NoticePage() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-50">注意事項・免責</h1>
           <p className="mt-2">
-            購入前・利用前に必ずお読みください。ここを読まずに実弾取引を始めることはおすすめしません。
+            利用前に必ずお読みください。ここを読まずに実弾取引を始めることはおすすめしません。
           </p>
         </div>
 
@@ -43,10 +39,9 @@ export default function NoticePage() {
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-zinc-200">3. 代金で買える範囲</h2>
+          <h2 className="text-zinc-200">3. 数字の扱い</h2>
           <p>
-            販売価格は {PRODUCT_PRICE_LABEL}（{PRODUCT_PRICE_NOTE}）です。対価は本ツールの利用であり、運用益・勝やか・シグナルの的中ではありません。
-            期待値や到達見込みの数字を、入金額やレバレッジの根拠にしないでください。
+            期待値や到達見込みは目安です。入金額やレバレッジの根拠にしないでください。
           </p>
         </section>
 
@@ -65,17 +60,9 @@ export default function NoticePage() {
           </p>
         </section>
 
-        <section className="space-y-2">
-          <h2 className="text-zinc-200">6. 返金について</h2>
-          <p>
-            デジタル商品の性質上、提供開始後に「思ったより稼げなかった」ことを理由とする返金はできません。
-            説明と提供内容が明らかに異なる場合は、お求めの販売ページ記載の販売者へご連絡ください。
-          </p>
-        </section>
-
         <p>
-          <Link href="/board" className="text-zinc-200 underline decoration-zinc-600 underline-offset-2">
-            内容を理解したうえでボードを開く
+          <Link href="/" className="text-zinc-200 underline decoration-zinc-600 underline-offset-2">
+            ボードへ戻る
           </Link>
         </p>
       </main>
