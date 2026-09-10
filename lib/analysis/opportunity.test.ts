@@ -218,6 +218,14 @@ describe("evaluateOpportunity", () => {
     expect(outcome.reason).toContain("15m足");
   });
 
+  it("does not log predictions until a trained model is supplied", () => {
+    const outcome = evaluate(candles);
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.predictions).toEqual([]);
+    expect(outcome.row.notes.join()).toContain("学習モデル未公開");
+  });
+
   it("caps leverage harder in a risk-off BTC regime", () => {
     const quiet = walk({ volatility: 0.0015, drift: 0, seed: 15 });
     const neutral = evaluate(quiet);

@@ -564,6 +564,12 @@ export function Dashboard() {
             Entry Board
           </Link>
           <Link
+            href="/model"
+            className="flex h-10 items-center rounded-md border border-zinc-700 px-4 text-sm text-zinc-300 hover:border-zinc-500"
+          >
+            Model / Calibration
+          </Link>
+          <Link
             href="/simulation"
             className="flex h-10 items-center rounded-md border border-zinc-700 px-4 text-sm text-zinc-300 hover:border-zinc-500"
           >

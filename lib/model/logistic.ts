@@ -23,7 +23,7 @@ export type TrainOptions = {
 
 export const DEFAULT_TRAIN_OPTIONS: TrainOptions = {
   l2: 1.0,
-  iterations: 220,
+  iterations: 150,
   learningRate: 0.5,
   pruneThreshold: 0.01,
 };

@@ -38,6 +38,19 @@ const HEAD_LABEL: Record<OutcomeModel["outcome"], string> = {
   STOP: "SL先着確率",
 };
 
+/**
+ * GET /api/predictions also resolves any elapsed predictions, so opening this
+ * screen is what advances the outcome log. There is no scheduler in a Worker.
+ */
+function fetchAll(): Promise<[ModelResponse, PredictionsResponse]> {
+  return Promise.all([
+    fetch("/api/model").then((response) => readApiJson<ModelResponse>(response, "GET /api/model")),
+    fetch("/api/predictions").then((response) =>
+      readApiJson<PredictionsResponse>(response, "GET /api/predictions"),
+    ),
+  ]);
+}
+
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded border border-zinc-800 bg-zinc-900/50 px-2.5 py-2">
@@ -123,15 +136,11 @@ export function ModelLab() {
   const [trainLog, setTrainLog] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [side, setSide] = useState<"long" | "short">("long");
+  const [barsPerSymbol, setBarsPerSymbol] = useState(2500);
 
   const load = useCallback(async () => {
     try {
-      const [models, predictions] = await Promise.all([
-        fetch("/api/model").then((response) => readApiJson<ModelResponse>(response, "GET /api/model")),
-        fetch("/api/predictions").then((response) =>
-          readApiJson<PredictionsResponse>(response, "GET /api/predictions"),
-        ),
-      ]);
+      const [models, predictions] = await fetchAll();
       setData(models);
       setLive(predictions);
       setError(null);
@@ -141,8 +150,20 @@ export function ModelLab() {
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    let active = true;
+    fetchAll()
+      .then(([models, predictions]) => {
+        if (!active) return;
+        setData(models);
+        setLive(predictions);
+      })
+      .catch((cause) => {
+        if (active) setError(cause instanceof Error ? cause.message : String(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const train = useCallback(async () => {
     setTraining(true);
@@ -152,7 +173,7 @@ export function ModelLab() {
       const response = await fetch("/api/model/train", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ activate: true }),
+        body: JSON.stringify({ activate: true, barsPerSymbol }),
       });
       const result = await readApiJson<TrainResponse>(response, "POST /api/model/train");
       setTrainLog([
@@ -166,7 +187,7 @@ export function ModelLab() {
     } finally {
       setTraining(false);
     }
-  }, [load]);
+  }, [barsPerSymbol, load]);
 
   const model = data?.model ?? null;
   const direction = model ? (side === "long" ? model.long : model.short) : null;
@@ -210,6 +231,20 @@ export function ModelLab() {
           >
             {training ? "学習中…" : "モデルを学習"}
           </button>
+          <label className="text-zinc-500">
+            学習期間
+            <select
+              value={barsPerSymbol}
+              onChange={(event) => setBarsPerSymbol(Number(event.target.value))}
+              disabled={training}
+              className="ml-1 rounded border border-zinc-700 bg-zinc-900 px-1 py-0.5 text-zinc-200"
+            >
+              <option value={1500}>約15日（最速）</option>
+              <option value={2500}>約26日（標準）</option>
+              <option value={4500}>約47日</option>
+              <option value={9000}>約94日（最長・時間がかかります）</option>
+            </select>
+          </label>
           <span className="text-zinc-500">
             {model
               ? `稼働中 ${model.version} ・ ${model.training.totalRows.toLocaleString()} サンプル ・ ${model.training.symbols.length} 銘柄`

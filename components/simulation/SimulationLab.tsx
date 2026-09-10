@@ -53,12 +53,20 @@ export function SimulationLab() {
             バックテスト結果は将来の成績を保証しません。
           </p>
         </div>
-        <Link
-          href="/"
-          className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:border-zinc-500"
-        >
-          ← Dashboardへ戻る
-        </Link>
+        <nav className="flex gap-2">
+          <Link
+            href="/"
+            className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:border-zinc-500"
+          >
+            Entry Board
+          </Link>
+          <Link
+            href="/model"
+            className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:border-zinc-500"
+          >
+            Model / Calibration
+          </Link>
+        </nav>
       </header>
 
       <section className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">

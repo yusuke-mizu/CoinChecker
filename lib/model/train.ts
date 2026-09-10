@@ -30,6 +30,10 @@ export type TrainRequest = {
 };
 
 export const TRAIN_DEFAULTS: TrainRequest = {
+  // Defaults are sized against the Workers CPU budget, not against how much
+  // data exists. Fitting cost is rows x features x iterations x heads, and six
+  // heads plus walk-forward folds add up fast; a stride of 3 also cuts the heavy
+  // overlap between adjacent 15m bars rather than paying for near-duplicates.
   symbols: [
     "BTCUSDT",
     "ETHUSDT",
@@ -39,24 +43,23 @@ export const TRAIN_DEFAULTS: TrainRequest = {
     "BNBUSDT",
     "ADAUSDT",
     "LINKUSDT",
-    "AVAXUSDT",
-    "LTCUSDT",
   ],
-  barsPerSymbol: 3000,
-  combosPerBar: 3,
-  stride: 2,
-  maxRowsPerSymbol: 4000,
+  barsPerSymbol: 2500,
+  combosPerBar: 2,
+  stride: 3,
+  maxRowsPerSymbol: 3000,
   walkForwardFolds: 4,
   options: DEFAULT_TRAIN_OPTIONS,
 };
 
 /** Hard ceilings, so a hand-written request cannot exhaust the Worker budget. */
 export const TRAIN_LIMITS = {
-  maxSymbols: 16,
-  maxBarsPerSymbol: 6000,
-  maxCombosPerBar: 6,
-  maxRowsTotal: 60_000,
-  maxIterations: 400,
+  maxSymbols: 12,
+  /** 9,000 bars is ~94 days of 15m, six paged kline requests per symbol. */
+  maxBarsPerSymbol: 9000,
+  maxCombosPerBar: 4,
+  maxRowsTotal: 40_000,
+  maxIterations: 250,
 };
 
 function splitLabels(rows: LabelledRow[], outcome: OutcomeHead): Uint8Array {
@@ -179,6 +182,21 @@ function trainDirection(
   };
 }
 
+/**
+ * Thins a chronologically sorted set to `cap` rows by even stride.
+ *
+ * Truncating to the newest rows instead would silently undo the point of
+ * fetching deep history: the model would only ever see the last few days and
+ * whatever regime happened to be running then.
+ */
+function subsample(rows: LabelledRow[], cap: number): LabelledRow[] {
+  if (rows.length <= cap) return rows;
+  const step = rows.length / cap;
+  const out: LabelledRow[] = [];
+  for (let i = 0; i < cap; i += 1) out.push(rows[Math.floor(i * step)]);
+  return out;
+}
+
 export type TrainProgress = (message: string) => void;
 
 export async function trainModel(
@@ -252,11 +270,13 @@ export async function trainModel(
   shortRows.sort((a, b) => a.time - b.time);
   const capPerDirection = Math.floor(TRAIN_LIMITS.maxRowsTotal / 2);
   const trimmed = {
-    long: longRows.length > capPerDirection ? longRows.slice(-capPerDirection) : longRows,
-    short: shortRows.length > capPerDirection ? shortRows.slice(-capPerDirection) : shortRows,
+    long: subsample(longRows, capPerDirection),
+    short: subsample(shortRows, capPerDirection),
   };
   if (longRows.length > capPerDirection) {
-    notes.push(`Row cap applied: kept the most recent ${capPerDirection} rows per direction`);
+    notes.push(
+      `Row cap applied: thinned to ${capPerDirection} rows per direction, spread evenly over the period rather than keeping only the newest.`,
+    );
   }
 
   onProgress?.(`training on ${trimmed.long.length + trimmed.short.length} rows`);
@@ -270,6 +290,19 @@ export async function trainModel(
   const firstTime = Math.min(...allRows.map((row) => row.time));
   const lastTime = Math.max(...allRows.map((row) => row.time));
   const totalRows = allRows.length;
+
+  // A model that cannot beat the closed-form first-passage prior it was handed
+  // has learned nothing useful, no matter how good its AUC looks. Say so on the
+  // model itself rather than letting it look authoritative on the board.
+  for (const side of [long, short]) {
+    for (const head of [side.reach, side.target, side.stop]) {
+      if (head.metrics.brier >= head.metrics.baselineBrier) {
+        notes.push(
+          `WARNING ${side.direction} ${head.outcome}: out-of-sample Brier ${head.metrics.brier.toFixed(4)} is not better than the analytic prior ${head.metrics.baselineBrier.toFixed(4)}. This head adds no edge over the random-walk baseline; treat its probabilities with low confidence.`,
+        );
+      }
+    }
+  }
 
   notes.push(
     "Derivative inputs (funding, open interest) are not in the trained feature set: only current values are available in bulk, so they cannot be reconstructed for past bars without look-ahead. They are applied as a separate bounded adjustment at prediction time.",

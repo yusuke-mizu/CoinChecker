@@ -36,6 +36,8 @@ export type Dataset = {
   rows: LabelledRow[];
   ambiguousCount: number;
   skippedBars: number;
+  /** Stride actually used, which widens when `maxRows` would otherwise bind. */
+  stride: number;
 };
 
 /**
@@ -175,8 +177,17 @@ export function buildSymbolDataset(
   let ambiguousCount = 0;
   let skippedBars = 0;
 
-  for (let i = FEATURE_WARMUP_BARS; i <= lastEntry; i += options.stride) {
-    if (rows.length >= options.maxRows) break;
+  // Widen the stride instead of stopping at `maxRows`. The loop runs oldest to
+  // newest, so breaking early would throw away the most recent bars -- exactly
+  // the ones closest to the conditions the model will be asked about.
+  const usableBars = Math.max(0, lastEntry - FEATURE_WARMUP_BARS);
+  const wanted = Math.ceil((usableBars * options.combosPerBar) / options.stride);
+  const stride =
+    wanted > options.maxRows
+      ? Math.ceil((usableBars * options.combosPerBar) / options.maxRows)
+      : options.stride;
+
+  for (let i = FEATURE_WARMUP_BARS; i <= lastEntry; i += stride) {
     const state = extractStateFeatures(context, i, market);
     if (!state) {
       skippedBars += 1;
@@ -226,7 +237,7 @@ export function buildSymbolDataset(
     }
   }
 
-  return { rows, ambiguousCount, skippedBars };
+  return { rows, ambiguousCount, skippedBars, stride };
 }
 
 if (BARRIER_FEATURE_COUNT + STATE_FEATURE_COUNT !== FEATURE_COUNT) {
